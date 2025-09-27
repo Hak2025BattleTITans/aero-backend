@@ -2,7 +2,7 @@
 
 ## Session
 
-### GET `/api/session/me`
+### GET `/api/v1/session/me`
 Получить текущий идентификатор сессии (`X-Session-Id`).
 Если заголовок отсутствует — сервер создаёт новый `X-Session-Id` и возвращает его в ответе.
 
@@ -23,7 +23,7 @@
 |------------|-----------|
 | `X-Session-Id` | Текущий идентификатор сессии (новый или существующий) |
 
-### GET `/api/session/data`
+### GET `/api/v1/session/data`
 Получить **все данные** текущей сессии по идентификатору `X-Session-Id`.
 
 Возвращает **полный объект сессии**: основные метрики, оба расписания **без обрезки** (все элементы массива), а также список `iframes` (каждый с `id`).
@@ -97,7 +97,7 @@
 
 ## Files
 
-### POST `/api/files/upload`
+### POST `/api/v1/files/upload`
 Загрузить файл на сервер.
 
 **Headers**
@@ -128,7 +128,7 @@
 
 ---
 
-### GET `/api/files/download`
+### GET `/api/v1/files/download`
 Скачать файл по `stored_name`.
 
 **Headers**
@@ -154,7 +154,7 @@
 
 ---
 
-### DELETE `/api/files/delete`
+### DELETE `/api/v1/files/delete`
 Удалить файл по `stored_name`.
 
 **Headers**
