@@ -19,8 +19,6 @@ redis_url = os.environ.get(
     "redis://localhost:6379/0"
 )
 
-print("Using REDIS_URL:", redis_url)
-
 async def get_redis() -> AsyncGenerator[Redis, None]:
     """
     FastAPI dependency to get Redis client.
