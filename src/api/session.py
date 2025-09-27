@@ -145,7 +145,7 @@ def _expires_at_from_ttl(ttl_seconds: int) -> Optional[str]:
     logger.debug(f"Computed expires_at: {dt.isoformat()} from TTL: {ttl_seconds}")
     return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
-@router.get("/me", response_model=SessionResponse)
+@router.get("/", response_model=SessionResponse)
 async def get_session(
     response: Response,
     redis: Redis = Depends(get_redis),
