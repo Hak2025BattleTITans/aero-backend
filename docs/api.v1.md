@@ -2,7 +2,7 @@
 
 ## Session
 
-### GET `api/session/me`
+### GET `/api/session/me`
 Получить текущий идентификатор сессии (`X-Session-Id`).
 Если заголовок отсутствует — сервер создаёт новый `X-Session-Id` и возвращает его в ответе.
 
@@ -22,6 +22,78 @@
 | Заголовок | Описание |
 |------------|-----------|
 | `X-Session-Id` | Текущий идентификатор сессии (новый или существующий) |
+
+### GET `/api/session/data`
+Получить **все данные** текущей сессии по идентификатору `X-Session-Id`.
+
+Возвращает **полный объект сессии**: основные метрики, оба расписания **без обрезки** (все элементы массива), а также список `iframes` (каждый с `id`).
+
+**Headers**
+| Заголовок | Тип | Обязательно | Описание |
+|---|---|---|---|
+| `X-Session-Id` | string | ✅ Да | Идентификатор сессии пользователя, полученный из [`/api/session/me`](#get-apisessionme). |
+
+**Response 200**
+```json
+{
+  "session_id": "sess_5zQ0nVrN8e8SxA1TqFlJxQ",
+  "expires_at": "2025-09-28T12:00:00Z",
+  "main_metrics": {
+    "income": { "value": 12000, "optimized_value": 13500 },
+    "passengers": { "value": 240, "optimized_value": 270 },
+    "avg_check": { "value": 50, "optimized_value": 55 }
+  },
+  "unoptimized_schedule": [
+    {
+      "date": "2025-04-18",
+      "flight_number": "224",
+      "dep_airport": "SVO",
+      "arr_airport": "SYX",
+      "dep_time": "10:35",
+      "arr_time": "01:15",
+      "flight_capacity": 28,
+      "lf_cabin": 0.6786,
+      "cabins_brones": 19,
+      "flight_type": "359",
+      "cabin_code": "C",
+      "pass_income": 10048.02,
+      "passengers": 19
+    },
+    ...
+  ],
+  "optimized_schedule": [
+    {
+      "date": "2025-04-18",
+      "flight_number": "224",
+      "dep_airport": "SVO",
+      "arr_airport": "SYX",
+      "dep_time": "10:35",
+      "arr_time": "01:15",
+      "flight_capacity": 24,
+      "lf_cabin": 0.25,
+      "cabins_brones": 6,
+      "flight_type": "359",
+      "cabin_code": "W",
+      "pass_income": 2013.02,
+      "passengers": 6
+    },
+    ...
+  ],
+  "iframes": [
+    {
+      "id": "frame_reports",
+      "title": "Отчёт по маршрутам",
+      "src": "https://example.com/report"
+    },
+    ...
+  ]
+}
+```
+
+**Response 404**
+```json
+{ "detail": "Session not found" }
+```
 
 ## Files
 
