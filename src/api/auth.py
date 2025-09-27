@@ -10,12 +10,16 @@ from pydantic import BaseModel
 from jose import jwt, JWTError
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+from dotenv import load_dotenv, find_dotenv
 
 # =========================
 # Конфигурация
 # =========================
 
 # .env:
+env_path = find_dotenv(".env", usecwd=True)
+load_dotenv(env_path, override=True, encoding="utf-8-sig")
+
 # ADMIN_PASSWORD=super-secret
 # JWT_SECRET=change-me
 ADMIN_USERNAME = "admin"
@@ -39,7 +43,7 @@ ADMIN_PASSWORD_HASH = ph.hash(ADMIN_PASSWORD)
 
 # Для Swagger: tokenUrl должен указывать на ваш роут логина
 # Если вы монтируете router под /api, используйте абсолютный путь как ниже.
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
