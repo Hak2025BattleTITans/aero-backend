@@ -1,0 +1,130 @@
+﻿# /src/api/auth.py
+
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from pydantic import BaseModel
+from jose import jwt, JWTError
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+
+# =========================
+# Конфигурация
+# =========================
+
+# .env:
+# ADMIN_PASSWORD=super-secret
+# JWT_SECRET=change-me
+ADMIN_USERNAME = "admin"
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+if not ADMIN_PASSWORD:
+    raise RuntimeError("ADMIN_PASSWORD не задан в .env")
+
+SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret-change-me")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+
+# Argon2 параметры (разумные дефолты под прод)
+ph = PasswordHasher(
+    time_cost=3,           # итерации
+    memory_cost=64 * 1024, # 64 MiB
+    parallelism=2
+)
+
+# Хеш пароля администратора вычисляется один раз при старте
+ADMIN_PASSWORD_HASH = ph.hash(ADMIN_PASSWORD)
+
+# Для Swagger: tokenUrl должен указывать на ваш роут логина
+# Если вы монтируете router под /api, используйте абсолютный путь как ниже.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Фиксированная "карточка" пользователя admin (без БД)
+APP_STARTED_AT = datetime.now(timezone.utc)
+ADMIN_USER = {
+    "id": 1,
+    "username": ADMIN_USERNAME,
+    "full_name": None,
+    "role": "admin",
+    "created_at": APP_STARTED_AT,
+}
+
+# =========================
+# Модели
+# =========================
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+class UserRead(BaseModel):
+    id: int
+    username: str
+    full_name: Optional[str] = None
+    role: str
+    created_at: datetime
+
+# =========================
+# Утилиты
+# =========================
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    try:
+        return ph.verify(hashed_password, plain_password)
+    except VerifyMismatchError:
+        return False
+
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    to_encode = data.copy()
+    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=15))
+    to_encode.update({"exp": expire, "iat": datetime.now(timezone.utc)})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserRead:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        role: str = payload.get("role")
+        if not username or username != ADMIN_USERNAME:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+    return UserRead(**ADMIN_USER)
+
+# =========================
+# Эндпоинты
+# =========================
+
+@router.post("/login", response_model=Token)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    # Разрешаем вход только для admin
+    if form_data.username != ADMIN_USERNAME:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+        )
+
+    if not verify_password(form_data.password, ADMIN_PASSWORD_HASH):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+        )
+
+    token = create_access_token(
+        {"sub": ADMIN_USERNAME, "role": ADMIN_USER["role"]},
+        expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    return {"access_token": token, "token_type": "bearer"}
+
+@router.get("/me", response_model=UserRead)
+async def me(current_user: UserRead = Depends(get_current_user)):
+    return current_user
