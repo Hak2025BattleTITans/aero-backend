@@ -31,7 +31,7 @@
 **Headers**
 | Заголовок | Тип | Обязательно | Описание |
 |---|---|---|---|
-| `X-Session-Id` | string | ✅ Да | Идентификатор сессии пользователя, полученный из [`/api/session/me`](#get-apisessionme). |
+| `X-Session-Id` | string | Да | Идентификатор сессии пользователя, полученный из [`/api/session/me`](#get-apisessionme). |
 
 **Response 200**
 ```json
@@ -93,6 +93,74 @@
 **Response 404**
 ```json
 { "detail": "Session not found" }
+```
+
+### GET `/api/v1/session/metrics?id={metric_type}`
+
+Получить конкретную метрику сессии (`income`, `passengers`, `avg_check`) по её типу.
+Метрика возвращается в формате пары значений: текущее (`value`) и оптимизированное (`optimized_value`).
+
+**Headers**
+| Заголовок | Тип | Обязательно | Описание |
+|------------|-----|--------------|-----------|
+| `X-Session-Id` | string | Да | Уникальный идентификатор активной сессии, полученный из [`/api/session/me`](#get-apisessionme). |
+
+**Query Parameters**
+| Параметр | Тип | Обязательно | Описание |
+|-----------|-----|--------------|-----------|
+| `id` | string | Да | Тип метрики: `income`, `passengers` или `avg_check`. |
+
+**Response 200**
+```json
+{
+  "id": "income",
+  "value": 12000,
+  "optimized_value": 13500
+}
+```
+
+**Response 400**
+```json
+{
+  "detail": "Invalid metric type. Must be one of: income, passengers, avg_check."
+}
+```
+
+**Response 404**
+```json
+{
+  "detail": "Session or metric not found."
+}
+```
+
+### GET `/api/v1/session/iframe?id={iframe_id}`
+
+Получить данные конкретного `iframe` по его идентификатору (`id`) из текущей сессии.
+
+**Headers**
+| Заголовок | Тип | Обязательно | Описание |
+|------------|-----|--------------|-----------|
+| `X-Session-Id` | string | Да | Уникальный идентификатор активной сессии, полученный из [`/api/session/me`](#get-apisessionme). |
+
+**Query Parameters**
+| Параметр | Тип | Обязательно | Описание |
+|-----------|-----|--------------|-----------|
+| `id` | string | Да | Идентификатор iframe (например, `frame_reports`, `frame-map`). |
+
+**Response 200**
+```json
+{
+  "id": "frame_reports",
+  "title": "Отчёт по маршрутам",
+  "src": "https://example.com/report"
+}
+```
+
+**Response 404**
+```json
+{
+  "detail": "Iframe not found."
+}
 ```
 
 ## Files
