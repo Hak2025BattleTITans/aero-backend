@@ -1,5 +1,7 @@
-﻿import uuid
+﻿import logging
+import uuid
 from datetime import datetime, timedelta, timezone
+from logging.config import dictConfig
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
@@ -7,10 +9,20 @@ from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 
 from database import get_redis
+from logging_config import LOGGING_CONFIG, ColoredFormatter
 from models import Iframe as IFrameItem
 from models import MainMetrics, ScheduleItem
 
 router = APIRouter(prefix="/session", tags=["session"])
+
+dictConfig(LOGGING_CONFIG)
+logger = logging.getLogger(__name__)
+
+root_logger = logging.getLogger()
+for handler in root_logger.handlers:
+    if type(handler) is logging.StreamHandler:
+        handler.setFormatter(ColoredFormatter('%(levelname)s:     %(asctime)s %(name)s - %(message)s'))
+
 
 TEST_JSON = {
   "main_metrics": {
@@ -114,10 +126,13 @@ def _expires_at_from_ttl(ttl_seconds: int) -> Optional[str]:
       -1 -> без истечения (None)
       >=0 -> вычислить ISO 8601 в UTC с суффиксом Z
     """
+
     if ttl_seconds < 0:
         return None if ttl_seconds == -1 else None
     dt = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
     # ISO с 'Z' по примеру
+
+    logger.debug(f"Computed expires_at: {dt.isoformat()} from TTL: {ttl_seconds}")
     return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 @router.get("/me", response_model=SessionResponse)
@@ -126,6 +141,7 @@ async def get_session(
     redis: Redis = Depends(get_redis),
     x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
 ):
+    logger.info(f"Session request with X-Session-Id: {x_session_id}")
     # Если клиент не передал X-Session-Id — генерируем новый
     if not x_session_id:
         x_session_id = f"sess_{uuid.uuid4().hex}"
@@ -143,6 +159,7 @@ async def get_session_data(
     x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
     redis: Redis = Depends(get_redis),
 ):
+    logger.info(f"Session data request with X-Session-Id: {x_session_id}")
     # Проверяем наличие заголовка
     if not x_session_id:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -152,6 +169,7 @@ async def get_session_data(
     ttl = await redis.ttl(session_key)
     if ttl == -2:
         # ключ не найден — считаем сессию отсутствующей
+        logger.warning(f"Session key not found in Redis: {session_key}")
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Достаём полноценные данные сессии из RedisJSON
@@ -165,10 +183,12 @@ async def get_session_data(
 
     if not raw:
         # Нет объекта сессии с данными
+        logger.warning(f"No session data found in Redis for key: {data_key}")
         raise HTTPException(status_code=404, detail="Session not found")
 
     # Формируем expires_at из TTL
     expires_at = _expires_at_from_ttl(ttl)
+    logger.debug(f"Session {x_session_id} has TTL: {ttl}, expires_at: {expires_at}")
 
     # Склеиваем финальный ответ (не обрезая массивы)
     # Ожидается структура в RedisJSON:
@@ -187,5 +207,6 @@ async def get_session_data(
         "iframes": raw.get("iframes", []),
     }
 
-    # 6) Валидируем и возвращаем по Pydantic-схеме
+    # Валидируем и возвращаем по Pydantic-схеме
+    logger.debug(f"Session data payload: {payload}")
     return SessionDataResponse(**payload)
