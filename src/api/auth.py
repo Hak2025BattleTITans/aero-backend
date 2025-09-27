@@ -1,16 +1,29 @@
 ﻿# /src/api/auth.py
 
+import logging
 import os
 from datetime import datetime, timedelta, timezone
+from logging.config import dictConfig
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel
-from jose import jwt, JWTError
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from dotenv import load_dotenv, find_dotenv
+from dotenv import find_dotenv, load_dotenv
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jose import JWTError, jwt
+from pydantic import BaseModel
+
+from logging_config import LOGGING_CONFIG, ColoredFormatter
+
+# Setup logging
+dictConfig(LOGGING_CONFIG)
+logger = logging.getLogger(__name__)
+root_logger = logging.getLogger()
+for handler in root_logger.handlers:
+    if type(handler) is logging.StreamHandler:
+        handler.setFormatter(ColoredFormatter('%(levelname)s:     %(asctime)s %(name)s - %(message)s'))
+
 
 # =========================
 # Конфигурация
@@ -77,18 +90,21 @@ class UserRead(BaseModel):
 # =========================
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
+    logger.debug("Verifying password")
     try:
         return ph.verify(hashed_password, plain_password)
     except VerifyMismatchError:
         return False
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+    logger.debug(f"Creating access token, expires_delta={expires_delta}")
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=15))
     to_encode.update({"exp": expire, "iat": datetime.now(timezone.utc)})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserRead:
+    logger.debug("Getting current user from token")
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -99,9 +115,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserRead:
         username: str = payload.get("sub")
         role: str = payload.get("role")
         if not username or username != ADMIN_USERNAME:
+            logger.warning("Invalid username in token")
             raise credentials_exception
     except JWTError:
+        logger.error("JWT decode error", exc_info=True)
         raise credentials_exception
+
+    logger.debug("Token valid, returning user info")
     return UserRead(**ADMIN_USER)
 
 # =========================
@@ -110,14 +130,18 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> UserRead:
 
 @router.post("/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    logger.info(f"Login attempt for user: {form_data.username}")
+
     # Разрешаем вход только для admin
     if form_data.username != ADMIN_USERNAME:
+        logger.warning(f"Unauthorized login attempt for user: {form_data.username}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
         )
 
     if not verify_password(form_data.password, ADMIN_PASSWORD_HASH):
+        logger.warning(f"Unauthorized login attempt for user: {form_data.username}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -127,8 +151,11 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         {"sub": ADMIN_USERNAME, "role": ADMIN_USER["role"]},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     )
+
+    logger.info(f"User {form_data.username} logged in successfully")
     return {"access_token": token, "token_type": "bearer"}
 
 @router.get("/me", response_model=UserRead)
 async def me(current_user: UserRead = Depends(get_current_user)):
+    logger.debug("Getting current user info")
     return current_user
