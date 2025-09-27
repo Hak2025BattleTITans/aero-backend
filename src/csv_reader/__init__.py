@@ -1,1 +1,1 @@
-﻿from .reader import CSVReader
+﻿from .reader import AsyncCSVReader

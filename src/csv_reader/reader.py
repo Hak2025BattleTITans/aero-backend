@@ -23,6 +23,12 @@ class AsyncCSVReader:
         self.path = path
         self.delimiter = delimiter
 
+    def calculate_main_metrics(self, items: List[ScheduleItem]) -> (int, float, float):
+        total_passengers = sum(item.passengers for item in items)
+        total_income = sum(item.pass_income for item in items)
+        avg_check = (total_income / total_passengers) if total_passengers > 0 else 0
+        return total_passengers, total_income, avg_check
+
     async def read(self) -> List[ScheduleItem]:
         items: List[ScheduleItem] = []
 
@@ -52,5 +58,7 @@ class AsyncCSVReader:
             )
             items.append(item)
 
+        passengers, income, avg_check = self.calculate_main_metrics(items)
+
         logger.debug(f"Read {len(items)} items from CSV file")
-        return items
+        return items, passengers, income, avg_check
