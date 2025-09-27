@@ -41,8 +41,5 @@ app.add_middleware(
 
 @app.get("/")
 async def root(request: Request):
+    logger.info(f"Request from {request.client.host}")
     return {"message": "Hello World"}
-
-for r in app.router.routes:
-    if hasattr(r, "endpoint"):
-        print(r.path, r.methods, r.endpoint.__module__, id(r.endpoint))
