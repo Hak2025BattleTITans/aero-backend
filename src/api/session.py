@@ -7,13 +7,23 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
+from dotenv import load_dotenv, find_dotenv
 
+from api.auth import get_current_user
 from database import get_redis
 from logging_config import LOGGING_CONFIG, ColoredFormatter
 from models import Iframe as IFrameItem
 from models import MainMetrics, ScheduleItem
 
-router = APIRouter(prefix="/session", tags=["session"])
+
+env_path = find_dotenv(".env", usecwd=True)
+load_dotenv(env_path, override=True, encoding="utf-8-sig")
+
+router = APIRouter(
+  prefix="/session",
+  tags=["session"],
+  dependencies=[Depends(get_current_user)]
+  )
 
 dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
