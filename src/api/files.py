@@ -17,10 +17,11 @@ from redis.asyncio import Redis
 
 from api.auth import get_current_user
 from database import (ensure_session_exists, get_redis, get_redis_key,
-                      set_file_key)
+                      set_file_key, get_full)
 from logging_config import LOGGING_CONFIG, ColoredFormatter
 from models import Iframe as IFrameItem
 from models import MainMetrics, MetricPair, ScheduleItem, SessionDoc
+from api.data import _resolve_csv_path
 
 dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
@@ -141,30 +142,34 @@ async def upload_csv_file(
         "download_url": download_url,
     }
 
-@router.get("/download")
+@router.get("/download", summary="Скачать CSV, привязанный к сессии")
 async def download_file(
-    session_id: str = Query(...),
-    stored_name: str = Query(...),
+    x_session_id: Optional[str] = Header(default=None, alias="X-Session-Id"),
     redis: Redis = Depends(get_redis),
 ):
     """
-    Simple download endpoint, checks that requested stored_name matches the one
-    saved under the session's .file_key (prevents cross-session access).
+    Возвращает файл, привязанный к сессии через `.file_key`.
+    Путь к файлу резолвится через `_resolve_csv_path`, что предотвращает доступ вне `UPLOAD_DIR`.
     """
-    logger.info(f"Downloading file: {stored_name} for session_id: {session_id}")
-    # Verify the file is the one bound to this session
-    from database import get_full  # local import to avoid circulars
-    doc = await get_full(redis, session_id)
-    if not doc or doc.file_key != stored_name:
-        logger.warning("File not found for this session or access denied")
-        raise HTTPException(status_code=404, detail="File not found for this session")
+    if not x_session_id:
+        raise HTTPException(status_code=400, detail="Missing X-Session-Id")
 
-    path = UPLOAD_DIR / stored_name
-    if not path.exists():
-        logger.error("File no longer available on disk")
+    logger.info(f"Downloading file for session_id: {x_session_id}")
+    session = await get_full(redis, x_session_id)
+    if not session or not session.file_key:
+        logger.error("No file_key in session")
+        raise HTTPException(status_code=400, detail="No file_key in session")
+
+    csv_path = _resolve_csv_path(session.file_key)
+    if not csv_path.exists() or not csv_path.is_file():
+        logger.error(f"CSV file not found at path: {csv_path}")
+        # Файл был привязан, но исчез с диска — корректнее 410 Gone
         raise HTTPException(status_code=410, detail="File no longer available")
 
-    # Use the original visible name from the stored_name suffix
-    download_name = stored_name.split("_", 1)[1] if "_" in stored_name else "download.csv"
-    logger.info(f"Serving file {path} as {download_name}")
-    return FileResponse(path=path, media_type="text/csv", filename=download_name)
+    # Имя для скачивания: если file_key имеет шаблон "<stored>_<original>",
+    # отдадим часть после первого "_", иначе используем имя файла.
+    stored_name = csv_path.name
+    download_name = stored_name.split("_", 1)[1] if "_" in stored_name else stored_name
+
+    logger.info(f"Serving file {csv_path} as {download_name}")
+    return FileResponse(path=str(csv_path), media_type="text/csv", filename=download_name)
