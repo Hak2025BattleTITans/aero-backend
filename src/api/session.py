@@ -34,90 +34,6 @@ for handler in root_logger.handlers:
         handler.setFormatter(ColoredFormatter('%(levelname)s:     %(asctime)s %(name)s - %(message)s'))
 
 
-TEST_JSON = {
-  "main_metrics": {
-    "income": { "value": 12000, "optimized_value": 13500 },
-    "passengers": { "value": 240, "optimized_value": 270 },
-    "avg_check": { "value": 50, "optimized_value": 55 }
-  },
-  "unoptimized_schedule": [
-    {
-      "date": "2025-04-18",
-      "flight_number": "224",
-      "dep_airport": "SVO",
-      "arr_airport": "SYX",
-      "dep_time": "10:35",
-      "arr_time": "01:15",
-      "flight_capacity": 28,
-      "lf_cabin": 0.6786,
-      "cabins_brones": 19,
-      "flight_type": "359",
-      "cabin_code": "C",
-      "pass_income": 10048.02,
-      "passengers": 19
-    },
-    {
-      "date": "2025-04-19",
-      "flight_number": "225",
-      "dep_airport": "SVO",
-      "arr_airport": "HKT",
-      "dep_time": "12:00",
-      "arr_time": "23:15",
-      "flight_capacity": 30,
-      "lf_cabin": 0.7333,
-      "cabins_brones": 22,
-      "flight_type": "321",
-      "cabin_code": "Y",
-      "pass_income": 15000.50,
-      "passengers": 22
-    }
-  ],
-  "optimized_schedule": [
-    {
-      "date": "2025-04-18",
-      "flight_number": "224",
-      "dep_airport": "SVO",
-      "arr_airport": "SYX",
-      "dep_time": "10:35",
-      "arr_time": "01:15",
-      "flight_capacity": 24,
-      "lf_cabin": 0.25,
-      "cabins_brones": 6,
-      "flight_type": "359",
-      "cabin_code": "W",
-      "pass_income": 2013.02,
-      "passengers": 6
-    },
-    {
-      "date": "2025-04-19",
-      "flight_number": "225",
-      "dep_airport": "SVO",
-      "arr_airport": "HKT",
-      "dep_time": "12:00",
-      "arr_time": "23:15",
-      "flight_capacity": 28,
-      "lf_cabin": 0.85,
-      "cabins_brones": 24,
-      "flight_type": "321",
-      "cabin_code": "Y",
-      "pass_income": 17000.00,
-      "passengers": 24
-    }
-  ],
-  "iframes": [
-    {
-      "id": "frame_reports",
-      "title": "Отчёт по маршрутам",
-      "src": "https://datalens.yandex/z2uxl5pbztkep?shopid_vj2j=sp-15&shopid_vj2j=sp-18&shopid_vj2j=sp-20&_embedded=1&_no_controls=1&_theme=light&_lang=ru"
-    },
-    {
-      "id": "frame_charts",
-      "title": "Графики доходности",
-      "src": "https://datalens.yandex/z2uxl5pbztkep?shopid_vj2j=sp-15&shopid_vj2j=sp-18&shopid_vj2j=sp-20&_embedded=1&_no_controls=1&_theme=light&_lang=ru"
-    }
-  ]
-}
-
 class SessionResponse(BaseModel):
     session_id: str
 
@@ -184,12 +100,10 @@ async def get_session_data(
 
     # Достаём полноценные данные сессии из RedisJSON
     data_key = f"{session_key}:data"
-    raw = TEST_JSON
-    # try:
-    #     raw: Dict[str, Any] | None = await redis.json().get(data_key)  # type: ignore[attr-defined]
-    #     raw = TEST_JSON if raw is None else raw
-    # except AttributeError:
-    #     raw = None
+    try:
+        raw: Dict[str, Any] | None = await redis.json().get(data_key)  # type: ignore[attr-defined]
+    except AttributeError:
+        raw = None
 
     if not raw:
         # Нет объекта сессии с данными
