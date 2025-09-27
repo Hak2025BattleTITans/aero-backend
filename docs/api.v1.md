@@ -47,10 +47,10 @@
 ```json
 {
   "session_id": "sess_5zQ0nVrN8e8SxA1TqFlJxQ",
-  "file_name": "report.bin",
-  "stored_name": "8f3a..._report.bin",
+  "file_name": "report.csv",
+  "stored_name": "8f3a..._report.csv",
   "size_bytes": 1048576,
-  "download_url": "/api/files/download?session_id=sess_5zQ0nVrN8e8SxA1TqFlJxQ&stored_name=8f3a..._report.bin"
+  "download_url": "/api/files/download?session_id=sess_5zQ0nVrN8e8SxA1TqFlJxQ&stored_name=8f3a..._report.csv"
 }
 ```
 
@@ -99,7 +99,7 @@
 ```json
 {
   "session_id": "sess_5zQ0nVrN8e8SxA1TqFlJxQ",
-  "stored_name": "8f3a..._report.bin",
+  "stored_name": "8f3a..._report.csv",
   "deleted": true,
   "size_bytes": 1048576
 }
@@ -111,3 +111,8 @@
   "error": "Файл не найден"
 }
 ```
+
+## f
+
+
+
