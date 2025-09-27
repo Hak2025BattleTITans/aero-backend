@@ -4,29 +4,34 @@ import os
 import time
 from contextlib import contextmanager, asynccontextmanager
 from datetime import datetime, timezone
-from typing import Generator
+from typing import Generator, AsyncGenerator
 
-from dotenv import load_dotenv
-from redis import Redis
+from dotenv import load_dotenv, find_dotenv
+from redis.asyncio import Redis
 
 from models import Iframe, MainMetrics, MetricPair, ScheduleItem, SessionDoc
 
-load_dotenv()
+env_path = find_dotenv(".env", usecwd=True)
+load_dotenv(env_path, override=True, encoding="utf-8-sig")
 
-host = os.environ.get("REDIS_HOST", "localhost")
-port = int(os.environ.get("REDIS_PORT", 6379))
+redis_url = os.environ.get(
+    "REDIS_URI",
+    "redis://localhost:6379/0"
+)
 
-def get_redis() -> Generator[Redis, None, None]:
+print("Using REDIS_URL:", redis_url)
+
+async def get_redis() -> AsyncGenerator[Redis, None]:
     """
     FastAPI dependency to get Redis client.
 
     Automatically closes the client when the request is done.
     """
-    client = Redis(host=host, port=port, decode_responses=True)
+    client = Redis.from_url(redis_url, decode_responses=True)
     try:
         yield client
     finally:
-        client.close()
+        await client.aclose()
 
 def get_redis_key(session_id: str) -> str:
     """
@@ -55,7 +60,7 @@ def exat_from_iso8601(iso: str) -> int:
     dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
     return int(dt.timestamp())
 
-def put_session(client: Redis, session_id: str, doc: SessionDoc):
+async def put_session(client: Redis, session_id: str, doc: SessionDoc):
     """
     Get session document
 
@@ -66,10 +71,10 @@ def put_session(client: Redis, session_id: str, doc: SessionDoc):
     """
 
     key = get_redis_key(session_id)
-    client.json().set(key, "$", doc.model_dump())
-    client.expireat(key, exat_from_iso8601(doc.expires_at))
+    await client.json().set(key, "$", doc.model_dump())
+    await client.expireat(key, exat_from_iso8601(doc.expires_at))
 
-def set_main_metrics(client: Redis, session_id: str, main_metrics: MainMetrics):
+async def set_main_metrics(client: Redis, session_id: str, main_metrics: MainMetrics):
     """
     Set main metrics for a session
 
@@ -79,9 +84,9 @@ def set_main_metrics(client: Redis, session_id: str, main_metrics: MainMetrics):
         main_metrics (MainMetrics): Main metrics to store
     """
     key = get_redis_key(session_id)
-    client.json().set(key, ".main_metrics", main_metrics.model_dump())
+    await client.json().set(key, ".main_metrics", main_metrics.model_dump())
 
-def update_income(client: Redis, session_id: str, value: int | None = None, optimized_value: int | None = None):
+async def update_income(client: Redis, session_id: str, value: int | None = None, optimized_value: int | None = None):
     """
     Update income for a session
 
@@ -95,20 +100,20 @@ def update_income(client: Redis, session_id: str, value: int | None = None, opti
         None
     """
     key = get_redis_key(session_id)
-    income = client.json().get(key, ".main_metrics.income") or {}
+    income = await client.json().get(key, ".main_metrics.income") or {}
 
     if value is None:
         value = income.get("value")
     if optimized_value is None:
         optimized_value = income.get("optimized_value")
 
-    client.json().set(key, ".main_metrics.income", {
+    await client.json().set(key, ".main_metrics.income", {
         "value": value,
         "optimized_value": optimized_value
     })
 
 
-def update_passengers(client: Redis, session_id: str, value: int | None = None, optimized_value: int | None = None):
+async def update_passengers(client: Redis, session_id: str, value: int | None = None, optimized_value: int | None = None):
     """
     Update passengers count for a session
 
@@ -122,20 +127,20 @@ def update_passengers(client: Redis, session_id: str, value: int | None = None, 
         None
     """
     key = get_redis_key(session_id)
-    passengers = client.json().get(key, ".main_metrics.passengers") or {}
+    passengers = await client.json().get(key, ".main_metrics.passengers") or {}
 
     if value is None:
         value = passengers.get("value")
     if optimized_value is None:
         optimized_value = passengers.get("optimized_value")
 
-    client.json().set(key, ".main_metrics.passengers", {
+    await client.json().set(key, ".main_metrics.passengers", {
         "value": value,
         "optimized_value": optimized_value
     })
 
 
-def update_avg(client: Redis, session_id: str, value: int | None = None, optimized_value: int | None = None):
+async def update_avg(client: Redis, session_id: str, value: int | None = None, optimized_value: int | None = None):
     """
     Update average check value for a session
 
@@ -149,19 +154,19 @@ def update_avg(client: Redis, session_id: str, value: int | None = None, optimiz
         None
     """
     key = get_redis_key(session_id)
-    avg_check = client.json().get(key, ".main_metrics.avg_check") or {}
+    avg_check = await client.json().get(key, ".main_metrics.avg_check") or {}
 
     if value is None:
         value = avg_check.get("value")
     if optimized_value is None:
         optimized_value = avg_check.get("optimized_value")
 
-    client.json().set(key, ".main_metrics.avg_check", {
+    await client.json().set(key, ".main_metrics.avg_check", {
         "value": value,
         "optimized_value": optimized_value
     })
 
-def replace_unoptimized_schedule(client: Redis, session_id: str, items: list[ScheduleItem]):
+async def replace_unoptimized_schedule(client: Redis, session_id: str, items: list[ScheduleItem]):
     """
     Replace unoptimized schedule for a session.
 
@@ -171,10 +176,10 @@ def replace_unoptimized_schedule(client: Redis, session_id: str, items: list[Sch
         items (list[ScheduleItem]): List of schedule items
     """
     key = get_redis_key(session_id)
-    client.json().set(key, ".unoptimized_schedule", [i.model_dump() for i in items])
+    await client.json().set(key, ".unoptimized_schedule", [i.model_dump() for i in items])
 
 
-def replace_optimized_schedule(client: Redis, session_id: str, items: list[ScheduleItem]):
+async def replace_optimized_schedule(client: Redis, session_id: str, items: list[ScheduleItem]):
     """
     Replace optimized schedule for a session.
 
@@ -184,10 +189,10 @@ def replace_optimized_schedule(client: Redis, session_id: str, items: list[Sched
         items (list[ScheduleItem]): List of schedule items
     """
     key = get_redis_key(session_id)
-    client.json().set(key, ".optimized_schedule", [i.model_dump() for i in items])
+    await client.json().set(key, ".optimized_schedule", [i.model_dump() for i in items])
 
 
-def set_iframes(client: Redis, session_id: str, frames: list[Iframe]):
+async def set_iframes(client: Redis, session_id: str, frames: list[Iframe]):
     """
     Set iframes for a session.
 
@@ -197,9 +202,9 @@ def set_iframes(client: Redis, session_id: str, frames: list[Iframe]):
         frames (list[Iframe]): List of iframe objects
     """
     key = get_redis_key(session_id)
-    client.json().set(key, ".iframes", [f.model_dump() for f in frames])
+    await client.json().set(key, ".iframes", [f.model_dump() for f in frames])
 
-def get_full(client: Redis, session_id: str) -> SessionDoc | None:
+async def get_full(client: Redis, session_id: str) -> SessionDoc | None:
     """
     Retrieve the full session document from Redis.
 
@@ -211,7 +216,7 @@ def get_full(client: Redis, session_id: str) -> SessionDoc | None:
         SessionDoc | None: The full session document, or None if not found.
     """
     key = get_redis_key(session_id)
-    raw = client.json().get(key, "$")
+    raw = await client.json().get(key, "$")
 
     if not raw:
         return None
@@ -223,7 +228,7 @@ def get_full(client: Redis, session_id: str) -> SessionDoc | None:
     return SessionDoc.model_validate(data)
 
 
-def get_main_metrics_only(client: Redis, session_id: str) -> MainMetrics | None:
+async def get_main_metrics_only(client: Redis, session_id: str) -> MainMetrics | None:
     """
     Retrieve only the main_metrics section from the session.
 
@@ -235,14 +240,14 @@ def get_main_metrics_only(client: Redis, session_id: str) -> MainMetrics | None:
         MainMetrics | None: The main metrics data, or None if missing.
     """
     key = get_redis_key(session_id)
-    raw = client.json().get(key, ".main_metrics")
+    raw = await client.json().get(key, ".main_metrics")
 
     if not raw:
         return None
 
     return MainMetrics.model_validate(raw)
 
-def sync_ttl_with_expires_at(client: Redis, session_id: str):
+async def sync_ttl_with_expires_at(client: Redis, session_id: str):
     """
     Sync Redis key TTL with the 'expires_at' field from the session document.
 
@@ -253,9 +258,9 @@ def sync_ttl_with_expires_at(client: Redis, session_id: str):
     key = get_redis_key(session_id)
 
     # Получаем expires_at напрямую через RedisJSON
-    expires_at = client.json().get(key, ".expires_at")
+    expires_at = await client.json().get(key, ".expires_at")
 
     if expires_at:
         exat = exat_from_iso8601(expires_at)
-        client.expireat(key, exat)
+        await client.expireat(key, exat)
 
