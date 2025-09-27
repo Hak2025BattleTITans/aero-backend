@@ -3,7 +3,7 @@ import json
 import os
 import time
 from contextlib import contextmanager, asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Generator, AsyncGenerator
 
 from dotenv import load_dotenv, find_dotenv
@@ -264,3 +264,37 @@ async def sync_ttl_with_expires_at(client: Redis, session_id: str):
         exat = exat_from_iso8601(expires_at)
         await client.expireat(key, exat)
 
+async def set_file_key(client: Redis, session_id: str, file_key: str):
+    """
+    Save uploaded file identifier (stored name) into the session JSON.
+    """
+    key = get_redis_key(session_id)
+    await client.json().set(key, ".file_key", file_key)
+
+async def ensure_session_exists(
+    client: Redis, session_id: str
+) -> SessionDoc:
+    """
+    Make sure a session document exists for the given session_id.
+    If missing, create a minimal default one with 24h TTL.
+    """
+    existing = await get_full(client, session_id)
+    if existing:
+        return existing
+
+    # minimal defaults
+    now = datetime.now(timezone.utc)
+    doc = SessionDoc(
+        unoptimized_schedule=[],
+        optimized_schedule=[],
+        main_metrics=MainMetrics(
+            passengers=MetricPair(value=0, optimized_value=0),
+            income=MetricPair(value=0, optimized_value=0),
+            avg_check=MetricPair(value=0, optimized_value=0),
+        ),
+        iframes=[],
+        file_key="",
+        expires_at=(now + timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    )
+    await put_session(client, session_id, doc)
+    return doc

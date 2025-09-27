@@ -23,6 +23,7 @@ app = FastAPI()
 api_v1 = APIRouter(prefix="/v1", tags=["v1"])
 api_v1.include_router(auth_router)
 api_v1.include_router(session_router)
+api_v1.include_router(files_router)
 
 app.include_router(api_v1, prefix="/api")
 
