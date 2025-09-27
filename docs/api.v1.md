@@ -59,7 +59,7 @@
       "pass_income": 10048.02,
       "passengers": 19
     },
-    ...
+    //...
   ],
   "optimized_schedule": [
     {
@@ -77,7 +77,7 @@
       "pass_income": 2013.02,
       "passengers": 6
     },
-    ...
+    //...
   ],
   "iframes": [
     {
@@ -85,7 +85,7 @@
       "title": "Отчёт по маршрутам",
       "src": "https://example.com/report"
     },
-    ...
+    //...
   ]
 }
 ```
