@@ -35,11 +35,11 @@ ENV PYTHONPATH=/app/src
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
 
+
+EXPOSE 5004
 # Порт приложения
 ENV HOST=0.0.0.0 \
-    PORT=2201
-
-EXPOSE 2201
+    PORT=5004
 
 # Запускаем через модуль, чтобы работал путь /src/main.py
 CMD ["python", "-m", "src.main"]
