@@ -306,7 +306,69 @@
 }
 ```
 
-## f
+## Data Management
 
+### POST `/api/v1/data/import-csv`
+Загрузить и прочитать данные из CSV файла.
 
+**Headers**
+| Заголовок | Тип | Обязательно | Описание |
+|------------|-----|--------------|-----------|
+| `X-Session-Id` | string | Нет | Уникальный идентификатор сессии пользователя. Если не передан — сервер создаёт новый. |
 
+**Response 200**
+```json
+{
+  "session_id": "sess_f9e2d8c1a2b04f5bb7b123",
+  "rows_parsed": 15420,
+  "columns": ["date", "flight_number", "origin", "destination", "cabin_code", "passengers", "revenue"]
+}
+```
+
+---
+
+### POST `/api/v1/data/build-olap`
+Сформировать OLAP-структуру (витрины) из загруженных данных.
+
+**Headers**
+| Заголовок | Тип | Обязательно | Описание |
+|------------|-----|--------------|-----------|
+| `X-Session-Id` | string | Да | Идентификатор сессии пользователя |
+
+**Response 200**
+```json
+{
+  "session_id": "sess_f9e2d8c1a2b04f5bb7b123",
+  "olap_tables": [
+    "flights_by_date",
+    "flights_by_airport",
+    "flights_by_cabin"
+  ],
+  "status": "created"
+}
+```
+
+---
+
+### POST `/api/v1/data/upload-datalens`
+Загрузить OLAP-таблицы в Yandex DataLens для построения графиков.
+
+**Headers**
+| Заголовок | Тип | Обязательно | Описание |
+|------------|-----|--------------|-----------|
+| `X-Session-Id` | string | Да | Идентификатор сессии пользователя |
+
+**Query params**
+| Параметр   | Тип    | Обязательно | Описание |
+|------------|--------|-------------|-----------|
+| `dataset`  | string | Да | Имя набора данных для загрузки в DataLens |
+
+**Response 200**
+```json
+{
+  "session_id": "sess_f9e2d8c1a2b04f5bb7b123",
+  "dataset": "optimized_flights",
+  "status": "uploaded",
+  "datalens_url": "https://datalens.yandex.ru/dashboard/abcd1234"
+}
+```
