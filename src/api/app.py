@@ -30,8 +30,8 @@ app.include_router(api_v1, prefix="/api")
 
 # CORS settings
 origins = [
-    "https://wiered.ru",
-    "https://www.wiered.ru",
+    "https://ruzserver.ru",
+    "https://www.ruzserver.ru",
     "http://localhost:5173",  # твой фронтенд (Vite)
     "http://127.0.0.1:5173",
 ]
