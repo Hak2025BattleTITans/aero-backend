@@ -99,8 +99,9 @@ async def _read_csv(redis, x_session_id: str, file_path: UploadFile) -> bytes:
 
     return items
 
-async def _build_olap(redis, x_session_id: str):
-    pass # TODO: implement OLAP building
+async def _build_olap(redis, x_session_id: str, items: List[ScheduleItem]):
+    pass
+
 
 @router.post("/upload")
 async def upload_csv_file(
