@@ -132,5 +132,4 @@ async def get_session_data(
     }
 
     # Валидируем и возвращаем по Pydantic-схеме
-    logger.debug(f"Session data payload: {payload}")
     return SessionDataResponse(**payload)
