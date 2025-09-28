@@ -24,6 +24,7 @@ from database import (ensure_session_exists, get_full, get_redis,
 from logging_config import LOGGING_CONFIG, ColoredFormatter
 from models import Iframe as IFrameItem
 from models import MainMetrics, MetricPair, ScheduleItem, SessionDoc
+from olap import OLAPBuilder
 
 dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
@@ -100,7 +101,9 @@ async def _read_csv(redis, x_session_id: str, file_path: UploadFile) -> bytes:
     return items
 
 async def _build_olap(redis, x_session_id: str, items: List[ScheduleItem]):
-    pass
+    builder = OLAPBuilder()
+
+    builder.create_olap_from_raw(x_session_id, items)
 
 
 @router.post("/upload")
