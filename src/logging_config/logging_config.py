@@ -56,7 +56,12 @@ LOGGING_CONFIG = {
             'level': 'INFO',
             'handlers': ['console'],
             'propagate': False
-        }
+        },
+        'python_multipart.multipart': {
+            'level': 'INFO',
+            'handlers': ['console'],
+            'propagate': False
+        },
     }
 }
 
