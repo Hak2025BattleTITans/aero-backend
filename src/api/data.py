@@ -37,7 +37,12 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)]
     )
 
-UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "uploads"))
+
+_raw_upload_dir = os.getenv("UPLOAD_DIR", "files/uploads").strip()
+base = Path(__file__).resolve().parents[0]
+UPLOAD_DIR = (Path(_raw_upload_dir) if Path(_raw_upload_dir).is_absolute()
+              else (base / _raw_upload_dir)).resolve()
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 def _resolve_csv_path(file_key: str) -> Path:
     """
@@ -46,6 +51,7 @@ def _resolve_csv_path(file_key: str) -> Path:
     """
 
     logger.debug(f"Resolving CSV path for file_key: {file_key}")
+
     # Если в Redis лежит абсолютный путь – используем его.
     candidate = Path(file_key)
     if not candidate.is_absolute():
@@ -53,10 +59,28 @@ def _resolve_csv_path(file_key: str) -> Path:
         candidate = (UPLOAD_DIR / file_key).resolve()
 
     # Блокируем выход из UPLOAD_DIR, если путь не абсолютный в file_key
-    # (на случай если file_key – просто имя/относительный путь).
-    if UPLOAD_DIR not in candidate.parents and candidate != UPLOAD_DIR:
-        logger.error("Attempt to access file outside of upload directory")
+    try:
+        # Если путь нельзя выразить как относительный к UPLOAD_DIR — ValueError
+        candidate.relative_to(UPLOAD_DIR)
+    except ValueError:
+        error_log = (
+            f"\nCandidate: {candidate}"
+            f"\nUpload dir: {UPLOAD_DIR}"
+            f"\nParents: {list(candidate.parents)}"
+            f"\nIs absolute: {candidate.is_absolute()}"
+        )
+
+        logger.error(f"Attempt to access file outside of upload directory: {error_log}")
         raise HTTPException(status_code=400, detail="Invalid CSV path")
+
+    if not candidate.exists():
+        logger.error(f"CSV not found: {candidate}")
+        raise HTTPException(status_code=404, detail="CSV not found")
+
+    if candidate.suffix.lower() != ".csv":
+        logger.error(f"Not a CSV file: {candidate.name}")
+        raise HTTPException(status_code=400, detail="Only .csv files are allowed")
+
 
     return candidate
 
