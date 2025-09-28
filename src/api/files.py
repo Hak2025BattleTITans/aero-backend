@@ -16,12 +16,14 @@ from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 
 from api.auth import get_current_user
-from database import (ensure_session_exists, get_redis, get_redis_key,
-                      set_file_key, get_full)
+from api.data import _resolve_csv_path
+from csv_reader import AsyncCSVReader
+from database import (ensure_session_exists, get_full, get_redis,
+                      get_redis_key, replace_unoptimized_schedule,
+                      set_file_key, set_main_metrics)
 from logging_config import LOGGING_CONFIG, ColoredFormatter
 from models import Iframe as IFrameItem
 from models import MainMetrics, MetricPair, ScheduleItem, SessionDoc
-from api.data import _resolve_csv_path
 
 dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
@@ -70,6 +72,39 @@ async def get_session_key(
     """
     logger.debug(f"Retrieving session key for session_id: {session_id}")
     return get_redis_key(session_id)
+
+async def _read_csv(redis, x_session_id: str, file_path: UploadFile) -> bytes:
+    logger.info(f"Reading CSV for session_id: {x_session_id}")
+
+
+    # Читаем CSV
+    reader = AsyncCSVReader(str(file_path), delimiter=";")
+    try:
+        items, passengers, income, avg_check = await reader.read()
+    except Exception as e:
+        logger.error("Error reading CSV", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"CSV read error: {e}")
+
+    # Сохраняем в Redis как unoptimized_schedule
+    logger.debug(f"Saving {len(items)} schedule items to Redis")
+    try:
+        await replace_unoptimized_schedule(redis, x_session_id, items)
+    except Exception as e:
+        logger.error("Error saving schedule to Redis", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Redis save error: {e}")
+
+    # Обновляем основные метрики
+    main_metrics = MainMetrics(
+        passengers=MetricPair(value=passengers, optimized_value=0),
+        income=MetricPair(value=income, optimized_value=0),
+        avg_check=MetricPair(value=avg_check, optimized_value=0),
+    )
+    logger.debug(f"Updating main metrics: {main_metrics}")
+    try:
+        await set_main_metrics(redis, x_session_id, main_metrics)
+    except Exception as e:
+        logger.error("Error updating main metrics in Redis", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Redis metrics update error: {e}")
 
 @router.post("/upload")
 async def upload_csv_file(
@@ -131,6 +166,9 @@ async def upload_csv_file(
     # 5) Save stored file name INSIDE the session JSON (`.file_key`)
     #    This is the key part you asked for.
     await set_file_key(redis, session_id, stored_name)
+
+    # Read CSV from file and store parsed data in Redis
+    await _read_csv(redis, session_id, stored_path)
 
     download_url = f"/api/v1/files/download?session_id={session_id}&stored_name={stored_name}"
     logger.info(f"File uploaded successfully: {stored_name} ({total} bytes)")
