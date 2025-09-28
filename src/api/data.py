@@ -38,7 +38,7 @@ router = APIRouter(
     )
 
 
-_raw_upload_dir = os.getenv("UPLOAD_DIR", "files/uploads").strip()
+_raw_upload_dir = os.getenv("UPLOAD_DIR", "uploads").strip()
 base = Path(__file__).resolve().parents[0]
 UPLOAD_DIR = (Path(_raw_upload_dir) if Path(_raw_upload_dir).is_absolute()
               else (base / _raw_upload_dir)).resolve()
