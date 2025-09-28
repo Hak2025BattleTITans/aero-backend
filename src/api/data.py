@@ -135,7 +135,7 @@ async def import_csv_from_session_file(
         raise HTTPException(status_code=404, detail="CSV file not found")
 
     # Читаем CSV
-    logger.debug("Reading CSV")
+    logger.debug(f"Reading CSV from path: {csv_path}")
     reader = AsyncCSVReader(str(csv_path), delimiter=";")
     try:
         items, passengers, income, avg_check = await reader.read()
