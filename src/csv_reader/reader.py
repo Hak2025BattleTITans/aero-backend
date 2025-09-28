@@ -1,6 +1,7 @@
 ﻿import csv
 import logging
 from logging.config import dictConfig
+from pathlib import Path
 from typing import List
 
 import aiofiles
@@ -97,3 +98,63 @@ class AsyncCSVReader:
 
         logger.debug(f"Read {len(items)} items from CSV file")
         return items, passengers, income, avg_check
+
+    async def write(self, items: List[ScheduleItem]) -> str:
+        """
+        Асинхронно записывает список ScheduleItem в CSV.
+        Новый файл будет иметь суффикс `_writed`.
+        Возвращает полный путь к созданному файлу.
+        """
+        original_path = Path(self.path)
+        new_path = original_path.with_name(original_path.stem + "_writed.csv")
+
+        fieldnames = [
+            "Дата вылета",
+            "Номер рейса",
+            "Аэропорт вылета",
+            "Аэропорт прилета",
+            "Время вылета",
+            "Время прилета",
+            "Емкость кабины",
+            "LF Кабина",
+            "Бронирования по кабинам",
+            "Тип ВС",
+            "Код кабины",
+            "Доход пасс",
+            "Пассажиры",
+        ]
+
+        # Собираем строки
+        rows = [
+            {
+                "Дата вылета": item.date,
+                "Номер рейса": item.flight_number,
+                "Аэропорт вылета": item.dep_airport,
+                "Аэропорт прилета": item.arr_airport,
+                "Время вылета": item.dep_time,
+                "Время прилета": item.arr_time,
+                "Емкость кабины": item.flight_capacity,
+                "LF Кабина": item.lf_cabin,
+                "Бронирования по кабинам": item.cabins_brones,
+                "Тип ВС": item.flight_type,
+                "Код кабины": item.cabin_code,
+                "Доход пасс": item.pass_income,
+                "Пассажиры": item.passengers,
+            }
+            for item in items
+        ]
+
+        # Пишем через aiofiles + стандартный csv
+        async with aiofiles.open(new_path, mode="w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=fieldnames,
+                delimiter=self.delimiter,
+            )
+            await f.write(self.delimiter.join(fieldnames) + "\n")
+            for row in rows:
+                line = self.delimiter.join(str(row[field]) for field in fieldnames)
+                await f.write(line + "\n")
+
+        logger.debug(f"Wrote {len(items)} items to CSV file: {new_path}")
+        return str(new_path)

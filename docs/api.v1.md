@@ -133,14 +133,9 @@
     },
     //...
   ],
-  "iframes": [
-    {
-      "id": "frame_reports",
-      "title": "Отчёт по маршрутам",
-      "src": "https://example.com/report"
-    },
-    //...
-  ]
+  "plots": {
+
+  }
 }
 ```
 

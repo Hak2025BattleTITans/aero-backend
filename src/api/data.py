@@ -39,9 +39,14 @@ router = APIRouter(
 
 
 _raw_upload_dir = os.getenv("UPLOAD_DIR", "uploads").strip()
-base = Path(__file__).resolve().parents[0]
-UPLOAD_DIR = (Path(_raw_upload_dir) if Path(_raw_upload_dir).is_absolute()
-              else (base / _raw_upload_dir)).resolve()
+
+if Path(_raw_upload_dir).is_absolute():
+    UPLOAD_DIR = Path(_raw_upload_dir)
+else:
+    # базируемся на текущем рабочем каталоге процесса (обычно WORKDIR в Docker = /app)
+    app_root = Path(os.getenv("PROJECT_ROOT", Path.cwd()))
+    UPLOAD_DIR = (app_root / _raw_upload_dir).resolve()
+
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 def _resolve_csv_path(file_key: str) -> Path:
