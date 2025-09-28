@@ -62,3 +62,38 @@ class AsyncCSVReader:
 
         logger.debug(f"Read {len(items)} items from CSV file")
         return items, passengers, income, avg_check
+
+
+    async def read_after_ranking(self) -> List[ScheduleItem]:
+        items: List[ScheduleItem] = []
+
+        async with aiofiles.open(self.path, mode="r", encoding="utf-8") as f:
+            logger.debug(f"Reading CSV file from path: {self.path}")
+            content = await f.read()
+
+        reader = csv.DictReader(content.splitlines(), delimiter=self.delimiter)
+
+        for row in reader:
+            row = {k: v.replace(",", ".") if isinstance(v, str) else v for k, v in row.items()}
+
+            item = ScheduleItem(
+                date=row["Дата вылета"],
+                flight_number=row["Номер рейса"],
+                dep_airport=row["Аэропорт вылета"],
+                arr_airport=row["Аэропорт прилета"],
+                dep_time=row["Время вылета"],
+                arr_time=row["Время прилета"],
+                flight_capacity=int(row["Емкость кабины"]),
+                lf_cabin=float(row["LF Кабина"]),
+                cabins_brones=int(row["Бронирования"]),
+                flight_type=row["Тип ВС"],
+                cabin_code=row["Код кабины"],
+                pass_income=float(row["Доход пасс"]),
+                passengers=int(row["Пассажиры"]),
+            )
+            items.append(item)
+
+        passengers, income, avg_check = self.calculate_main_metrics(items)
+
+        logger.debug(f"Read {len(items)} items from CSV file")
+        return items, passengers, income, avg_check

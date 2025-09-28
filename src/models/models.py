@@ -17,6 +17,13 @@ class ScheduleItem(BaseModel):
     pass_income: float
     passengers: int
 
+#№;Изменения;Дата вылета;Номер рейса;Аэропорт вылета;
+# Аэропорт прилета;Время вылета;Время прилета;Емкость кабины;
+# LF Кабина;Бронирования;Тип ВС;Код кабины;Доход пасс;Пассажиры
+class ScheduleItemRanking(ScheduleItem):
+    number: str
+    changes: str
+
 class MetricPair(BaseModel):
     value: float | int
     optimized_value: float | int

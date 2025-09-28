@@ -38,12 +38,14 @@ mdurl==0.1.2
 ml_dtypes==0.5.3
 multidict==6.6.4
 namex==0.1.0
+narwhals==2.5.0
 numpy==2.2.6
 opt_einsum==3.4.0
 optree==0.17.0
 packaging==25.0
 pandas==2.3.2
 pillow==11.3.0
+plotly==6.3.0
 propcache==0.3.2
 protobuf==6.32.1
 psycopg2==2.9.10

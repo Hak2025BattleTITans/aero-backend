@@ -5,7 +5,7 @@ from logging.config import dictConfig
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import session_router, files_router, auth_router, data_router
+from api import session_router, files_router, auth_router, data_router, optimize_router
 from logging_config import LOGGING_CONFIG, ColoredFormatter
 
 # Setup logging
@@ -25,6 +25,7 @@ api_v1.include_router(auth_router)
 api_v1.include_router(session_router)
 api_v1.include_router(files_router)
 api_v1.include_router(data_router)
+api_v1.include_router(optimize_router)
 
 app.include_router(api_v1, prefix="/api")
 

@@ -16,8 +16,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
-    libpq-dev \
+    libpq-dev gcc \
 && rm -rf /var/lib/apt/lists/*
+
+# файлы сборки
+
 
 # Сначала зависимости — для лучшего layer caching
 # Ожидается файл requirements.txt в корне проекта.
@@ -29,12 +32,33 @@ RUN pip install -vv -r requirements.txt
 
 # Копируем исходники
 COPY src ./src
+COPY pyproject.toml setup.py ./
 ENV PYTHONPATH=/app/src
+
+# Проверим валидность pyproject.toml
+RUN python - <<'PY'
+from pathlib import Path
+p = Path("pyproject.toml")
+if p.exists():
+    b = p.read_bytes()
+    if b.startswith(b'\xef\xbb\xbf'):
+        b = b[3:]
+    b = b.replace(b'\r\n', b'\n')
+    p.write_bytes(b)
+    print("pyproject.toml: BOM/CRLF очищены")
+PY
+
+# Сборка .so инплейс (и диагностика, если что-то не так)
+RUN set -eux; \
+    python -V; \
+    ls -la src || true; \
+    find src -maxdepth 4 -type d -name "core*" -o -name "optim*" || true; \
+    find src -maxdepth 4 -type f \( -name "*.c" -o -name "*.cpp" -o -name "*.pyx" \) || true; \
+    python setup.py build_ext --inplace -v
 
 # Нерутовый пользователь
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
-
 
 EXPOSE 5004
 # Порт приложения
