@@ -134,7 +134,16 @@
     //...
   ],
   "plots": {
-
+    "plots": [
+      { "data": [ /* avg_check traces */ ], "layout": { /* ... */ } },
+      { "data": [ /* dyn_income traces */ ], "layout": { /* ... */ } },
+      { "data": [ /* dyn_passenger traces */ ], "layout": { /* ... */ } }
+    ],
+    "optimized_plots": [
+      { "data": [ /* avg_check traces (optimized) */ ], "layout": { /* ... */ } },
+      { "data": [ /* dyn_income traces (optimized) */ ], "layout": { /* ... */ } },
+      { "data": [ /* dyn_passenger traces (optimized) */ ], "layout": { /* ... */ } }
+    ]
   }
 }
 ```
