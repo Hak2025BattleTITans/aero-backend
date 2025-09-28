@@ -1,7 +1,9 @@
-﻿import os
+﻿import logging
+import os
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
+from logging.config import dictConfig
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -13,53 +15,13 @@ from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 
 from api.auth import get_current_user
-from csv_reader import AsyncCSVReader
-from database import (ensure_session_exists, get_redis, get_redis_key,
-                      set_file_key, set_main_metrics)
-from models import Iframe as IFrameItem
-from models import MainMetrics, MetricPair, ScheduleItem, SessionDoc
-
-router = APIRouter(
-    prefix="/data",
-    tags=["data"],
-    dependencies=[Depends(get_current_user)]
-    )
-
-UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "uploads"))
-
-def _resolve_csv_path(file_key: str) -> Path:
-    """
-    Безопасно резолвит путь к CSV на основе file_key из сессии.
-    Поддерживает как абсолютный путь, так и просто имя файла.
-    """
-    # Если в Redis лежит абсолютный путь – используем его.
-    candidate = Path(file_key)
-    if not candidate.is_absolute():
-        candidate = (UPLOAD_DIR / file_key).resolve()
-
-    # Блокируем выход из UPLOAD_DIR, если путь не абсолютный в file_key
-    # (на случай если file_key – просто имя/относительный путь).
-    if UPLOAD_DIR not in candidate.parents and candidate != UPLOAD_DIR:
-        raise HTTPException(status_code=400, detail="Invalid CSV path")
-
-    return candidate
-
-# Setup logging
-import logging
-import os
-from logging.config import dictConfig
-from pathlib import Path
-from typing import Optional
-
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
-from redis.asyncio import Redis
-
-from api.auth import get_current_user
 from csv_reader import AsyncCSVReader  # поправьте путь импорта под ваш проект
 from database import (ensure_session_exists, get_full, get_redis,
-                      replace_unoptimized_schedule)
+                      get_redis_key, replace_unoptimized_schedule,
+                      set_file_key, set_main_metrics)
 from logging_config import LOGGING_CONFIG, ColoredFormatter
-from models import ScheduleItem
+from models import Iframe as IFrameItem
+from models import MainMetrics, MetricPair, ScheduleItem, SessionDoc
 
 dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
@@ -69,16 +31,13 @@ for handler in root_logger.handlers:
     if type(handler) is logging.StreamHandler:
         handler.setFormatter(ColoredFormatter('%(levelname)s:     %(asctime)s %(name)s - %(message)s'))
 
-
 router = APIRouter(
     prefix="/data",
     tags=["data"],
-    dependencies=[Depends(get_current_user)],
-)
+    dependencies=[Depends(get_current_user)]
+    )
 
-# Все CSV хранятся здесь (может быть переопределено переменной окружения)
-UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "uploads")).resolve()
-
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "uploads"))
 
 def _resolve_csv_path(file_key: str) -> Path:
     """
@@ -100,7 +59,6 @@ def _resolve_csv_path(file_key: str) -> Path:
         raise HTTPException(status_code=400, detail="Invalid CSV path")
 
     return candidate
-
 
 @router.post("/import-csv", summary="Прочитать CSV из file_key и сохранить в Redis")
 async def import_csv_from_session_file(
