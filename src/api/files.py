@@ -64,15 +64,6 @@ def _sanitize_filename(name: str) -> str:
     logger.debug(f"Sanitized filename: {name}")
     return name
 
-async def get_session_key(
-    session_id: str = Header(..., alias="X-Session-Id"),
-) -> str:
-    """
-    Возвращает готовый Redis ключ для данной сессии.
-    """
-    logger.debug(f"Retrieving session key for session_id: {session_id}")
-    return get_redis_key(session_id)
-
 async def _read_csv(redis, x_session_id: str, file_path: UploadFile) -> bytes:
     logger.info(f"Reading CSV for session_id: {x_session_id}")
 
@@ -105,6 +96,11 @@ async def _read_csv(redis, x_session_id: str, file_path: UploadFile) -> bytes:
     except Exception as e:
         logger.error("Error updating main metrics in Redis", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Redis metrics update error: {e}")
+
+    return items
+
+async def _build_olap(redis, x_session_id: str):
+    pass # TODO: implement OLAP building
 
 @router.post("/upload")
 async def upload_csv_file(
@@ -168,7 +164,10 @@ async def upload_csv_file(
     await set_file_key(redis, session_id, stored_name)
 
     # Read CSV from file and store parsed data in Redis
-    await _read_csv(redis, session_id, stored_path)
+    items = await _read_csv(redis, session_id, stored_path)
+
+    # Build olap data asynchronously (fire and forget)
+    await _build_olap(redis, session_id, items)
 
     download_url = f"/api/v1/files/download?session_id={session_id}&stored_name={stored_name}"
     logger.info(f"File uploaded successfully: {stored_name} ({total} bytes)")
