@@ -373,3 +373,63 @@
   "datalens_url": "https://datalens.yandex.ru/dashboard/abcd1234"
 }
 ```
+
+## Optimization
+
+### POST `/api/v1/optimize`
+Запустить оптимизацию датасета с выбором сценария.
+
+**Headers**
+| Заголовок | Тип | Обязательно | Описание |
+|------------|-----|--------------|-----------|
+| `X-Session-Id` | string | Да | Идентификатор сессии пользователя |
+
+**Body (JSON)**
+| Поле        | Тип    | Обязательно | Описание |
+|-------------|--------|-------------|-----------|
+| `ranking`   | bool   | Нет | Включить оптимизацию слотов (ranking) |
+| `overbooking` | bool | Нет | Включить оптимизацию овербукинга |
+
+> ⚠️ Если оба параметра заданы, оптимизация выполняется в порядке: сначала **ranking**, затем **overbooking**.
+
+> ⚠️ Если ни один параметр не передан, вернётся ошибка `400`.
+
+**Примеры запросов**
+```json
+{ "ranking": true }
+```
+— оптимизация только слотов
+
+```json
+{ "overbooking": true }
+```
+— оптимизация только овербукинга
+
+```json
+{ "ranking": true, "overbooking": true }
+```
+— сначала слоты, потом овербукинг
+
+**Response 200**
+```json
+{
+  "session_id": "sess_abcd1234efgh5678",
+  "applied_steps": ["ranking", "overbooking"],
+  "status": "success",
+  "optimized_rows": 15320,
+  "metrics": {
+    "income_before": 12000,
+    "income_after": 13800,
+    "delta_income": 1800,
+    "avg_load_factor_before": 0.65,
+    "avg_load_factor_after": 0.72
+  }
+}
+```
+
+**Response 400**
+```json
+{
+  "error": "At least one optimization switch (ranking or overbooking) must be true"
+}
+```
