@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 
+import helpers
 from api.auth import get_current_user
 from api.data import _resolve_csv_path
 from csv_reader import AsyncCSVReader
@@ -171,6 +172,14 @@ async def upload_csv_file(
 
     # 5) Save stored file name INSIDE the session JSON (`.file_key`)
     #    This is the key part you asked for.
+
+
+    # 5.1 Генерация номеров рейсов ("№") до чтения CSV
+    stored_path = helpers.add_number_row(
+        session_id=session_id,
+        stored_path=stored_path,
+        suffix=f"with_numbers_{uuid.uuid4().hex}"
+    )
 
     out_over = _make_outfile(f"sess_{session_id}")
     logger.debug(f"Optimizing CSV: {stored_path} -> {out_over}")

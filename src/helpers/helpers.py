@@ -2,6 +2,7 @@
 import os
 from logging.config import dictConfig
 from pathlib import Path
+import uuid
 
 from fastapi import HTTPException
 
@@ -21,6 +22,19 @@ base = Path(__file__).resolve().parents[0]
 UPLOAD_DIR = (Path(_raw_upload_dir) if Path(_raw_upload_dir).is_absolute()
               else (base / _raw_upload_dir)).resolve()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+OPTIMIZED_DIR = Path(os.environ.get("OPTIMIZED_DIR", "optimized")).resolve()
+OPTIMIZED_DIR.mkdir(parents=True, exist_ok=True)
+
+def make_outfile(stem: str) -> Path:
+    """Create a unique output file path under OPTIMIZED_DIR."""
+    # Example: stem='sess_xxx__overbooking' -> 'sess_xxx__overbooking__1738139123.csv'
+    from time import time
+
+    outfile = OPTIMIZED_DIR / f"{stem}__{int(time())}.csv"
+    # Defensive: ensure parent exists
+    outfile.parent.mkdir(parents=True, exist_ok=True)
+    return outfile
 
 def resolve_csv_path(file_key: str) -> Path:
     """
@@ -61,3 +75,53 @@ def resolve_csv_path(file_key: str) -> Path:
 
 
     return candidate
+
+def add_number_row(session_id: str, stored_path: Path, suffix: str) -> None:
+    logger.debug(f"Adding number row for {stored_path} in session {session_id}")
+    try:
+        import pandas as pd
+
+        df = pd.read_csv(stored_path, delimiter=';')
+
+        required = ['Номер рейса', 'Дата вылета', 'Время вылета', 'Код кабины']
+        missing = [c for c in required if c not in df.columns]
+        if missing:
+            logger.error(f"Input CSV is missing required columns: {stored_path}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Input CSV is missing required columns: {missing}",
+            )
+
+        # Формируем стабильные группы (порядок появления сохраняется)
+        df['__group'] = (
+            df['Номер рейса'].astype(str)
+            + '_'
+            + df['Дата вылета'].astype(str)
+            + '_'
+            + df['Время вылета'].astype(str)
+        )
+        unique_groups = df['__group'].drop_duplicates().tolist()
+        group_mapping = {group: i + 1 for i, group in enumerate(unique_groups)}
+
+        # Конструируем "№" и переносим его в первый столбец
+        df['№'] = df['__group'].map(group_mapping).astype(str) + '-' + df['Код кабины'].astype(str)
+        df = df.drop(columns='__group')
+        df = df[['№'] + [c for c in df.columns if c != '№']]
+
+        # Сохраняем во временный файл и используем его как входной для оптимизаций
+        input_with_numbers = make_outfile(f"{session_id}__{suffix}").with_suffix(".csv")
+        df.to_csv(input_with_numbers, index=False, sep=';')
+        stored_path = input_with_numbers
+
+        logger.info(
+            f"Flight numbers generated: {len(unique_groups)} unique groups. "
+            f"Output CSV: {input_with_numbers}"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to generate flight numbers", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Flight number generation error: {e}")
+
+    return stored_path

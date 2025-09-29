@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 
+import helpers
 from api.auth import get_current_user
 from csv_reader import AsyncCSVReader
 from database import get_full  # session reader
@@ -157,51 +158,11 @@ async def optimize_dataset(
     input_csv = _resolve_csv_path(session.file_key, OPTIMIZED_DIR)
 
     # 3.1) Генерация номеров рейсов ("№") до оптимизации
-    try:
-        import pandas as pd
-
-        df = pd.read_csv(input_csv, delimiter=';')
-
-        required = ['Номер рейса', 'Дата вылета', 'Время вылета', 'Код кабины']
-        missing = [c for c in required if c not in df.columns]
-        if missing:
-            logger.error(f"Input CSV is missing required columns: {input_csv}")
-            raise HTTPException(
-                status_code=400,
-                detail=f"Input CSV is missing required columns: {missing}",
-            )
-
-        # Формируем стабильные группы (порядок появления сохраняется)
-        df['__group'] = (
-            df['Номер рейса'].astype(str)
-            + '_'
-            + df['Дата вылета'].astype(str)
-            + '_'
-            + df['Время вылета'].astype(str)
-        )
-        unique_groups = df['__group'].drop_duplicates().tolist()
-        group_mapping = {group: i + 1 for i, group in enumerate(unique_groups)}
-
-        # Конструируем "№" и переносим его в первый столбец
-        df['№'] = df['__group'].map(group_mapping).astype(str) + '-' + df['Код кабины'].astype(str)
-        df = df.drop(columns='__group')
-        df = df[['№'] + [c for c in df.columns if c != '№']]
-
-        # Сохраняем во временный файл и используем его как входной для оптимизаций
-        input_with_numbers = _make_outfile(f"{x_session_id}__with_numbers").with_suffix(".csv")
-        df.to_csv(input_with_numbers, index=False, sep=';')
-        input_csv = input_with_numbers
-
-        logger.info(
-            f"Flight numbers generated: {len(unique_groups)} unique groups. "
-            f"Output CSV: {input_with_numbers}"
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Failed to generate flight numbers", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Flight number generation error: {e}")
+    input_csv = helpers.add_number_row(
+        session_id=x_session_id,
+        stored_path=input_csv,
+        suffix="__with_numbers"
+    )
 
     # 4) Готовим пути вывода
     # Порядок: overbooking -> (intermediate) -> ranking -> final
