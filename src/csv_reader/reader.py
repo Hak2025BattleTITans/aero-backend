@@ -1,6 +1,7 @@
 ﻿import csv
 import logging
 from logging.config import dictConfig
+import math
 from pathlib import Path
 from typing import List
 
@@ -49,13 +50,13 @@ class AsyncCSVReader:
                 arr_airport=row["Аэропорт прилета"],
                 dep_time=row["Время вылета"],
                 arr_time=row["Время прилета"],
-                flight_capacity=int(row["Емкость кабины"]),
+                flight_capacity=int(math.floor(float(row["Емкость кабины"]))),
                 lf_cabin=float(row["LF Кабина"]),
-                cabins_brones=int(row["Бронирования по кабинам"]),
+                cabins_brones=int(math.floor(float(row["Бронирования по кабинам"]))),
                 flight_type=row["Тип ВС"],
                 cabin_code=row["Код кабины"],
                 pass_income=float(row["Доход пасс"]),
-                passengers=int(row["Пассажиры"]),
+                passengers=int(math.floor(float(row["Пассажиры"]))),
             )
             items.append(item)
 
