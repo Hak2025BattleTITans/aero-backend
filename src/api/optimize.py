@@ -37,7 +37,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # Router & logging
 # ------------------------------------------------------------------------------
 router = APIRouter(
-    prefix="/api/v1/optimize",
+    prefix="/optimize",
     tags=["optimize"],
     dependencies=[Depends(get_current_user)],
 )
