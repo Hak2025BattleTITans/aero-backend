@@ -25,6 +25,8 @@ from logging_config import LOGGING_CONFIG, ColoredFormatter
 from models import Iframe as IFrameItem
 from models import MainMetrics, MetricPair, ScheduleItem, SessionDoc
 from olap import OLAPBuilder
+from api.optimize import _make_outfile
+from optimizer import Optimizer
 
 dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
@@ -43,6 +45,9 @@ router = APIRouter(
 
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+OPTIMIZED_DIR = Path(os.environ.get("OPTIMIZED_DIR", "optimized")).resolve()
+OPTIMIZED_DIR.mkdir(parents=True, exist_ok=True)
 
 MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
 CSV_CONTENT_TYPES = {"text/csv", "application/vnd.ms-excel"}  # browsers often use the latter
@@ -166,10 +171,26 @@ async def upload_csv_file(
 
     # 5) Save stored file name INSIDE the session JSON (`.file_key`)
     #    This is the key part you asked for.
+
+    out_over = _make_outfile(f"sess_{session_id}")
+    logger.debug(f"Optimizing CSV: {stored_path} -> {out_over}")
+    optimizer = Optimizer()
+    try:
+        optimizer.universal_data_preparator(str(stored_path), str(out_over))
+    except Exception as e:
+        logger.error("Error optimizing CSV", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"CSV optimization error: {e}")
+
+
+    stored_name = f"{out_over}"
+    stored_name = stored_name.split("/")[-1]
+    logger.debug(f"Saving file key: {stored_name}")
     await set_file_key(redis, session_id, stored_name)
 
     # Read CSV from file and store parsed data in Redis
-    items = await _read_csv(redis, session_id, stored_path)
+
+
+    items = await _read_csv(redis, session_id, out_over)
 
     # Build olap data asynchronously (fire and forget)
     await _build_olap(redis, session_id, items)

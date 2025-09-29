@@ -200,12 +200,18 @@ def run_ranking_optimization(data_file, optimized_file):
             change_status = "Изменено" if dt != s['initial_datetime'] else "Не изменено"
             if change_status == "Не изменено":
                 for original_row in original_data_map.get(flight['flight_group_id'], []):
-                    final_schedule_data.append({'№': original_row['№'], 'Изменения': change_status, 'Дата вылета': dt.strftime('%Y-%m-%d'), 'Номер рейса': s['flight_no'], 'Аэропорт вылета': s['dep_airport'], 'Аэропорт прилета': s['arr_airport'], 'Время вылета': dt.strftime('%H:%M'), 'Время прилета': (dt + s['duration']).strftime('%H:%M'), 'Емкость кабины': int(original_row['Емкость кабины']), 'LF Кабина': round(original_row['LF Кабина'], 4), 'Бронирования': int(original_row['Бронирования по кабинам']), 'Тип ВС': s['aircraft_type'], 'Код кабины': original_row['Код кабины'], 'Доход пасс': round(original_row['Доход пасс'], 2), 'Пассажиры': int(original_row['Пассажиры'])})
+                    capacity = int(original_row['Емкость кабины'])
+                    bookings = int(original_row['Бронирования по кабинам'])
+                    calculated_lf = (bookings / capacity) if capacity > 0 else 0.0
+                    final_schedule_data.append({'№': original_row['№'], 'Изменения': change_status, 'Дата вылета': dt.strftime('%Y-%m-%d'), 'Номер рейса': s['flight_no'], 'Аэропорт вылета': s['dep_airport'], 'Аэропорт прилета': s['arr_airport'], 'Время вылета': dt.strftime('%H:%M'), 'Время прилета': (dt + s['duration']).strftime('%H:%M'), 'Емкость кабины': capacity, 'LF Кабина': round(calculated_lf, 4), 'Бронирования': bookings, 'Тип ВС': s['aircraft_type'], 'Код кабины': original_row['Код кабины'], 'Доход пасс': round(original_row['Доход пасс'], 2), 'Пассажиры': int(original_row['Пассажиры'])})
             else:
                 preds_for_flight = chosen_predictions[i]
                 for cabin_code in s['available_cabins']:
                     pred = preds_for_flight[cabin_to_pred_idx[cabin_code]]
-                    final_schedule_data.append({'№': f"{flight['flight_group_id']}-{cabin_code}", 'Изменения': change_status, 'Дата вылета': dt.strftime('%Y-%m-%d'), 'Номер рейса': s['flight_no'], 'Аэропорт вылета': s['dep_airport'], 'Аэропорт прилета': s['arr_airport'], 'Время вылета': dt.strftime('%H:%M'), 'Время прилета': (dt + s['duration']).strftime('%H:%M'), 'Емкость кабины': int(pred[0]), 'LF Кабина': round(float(pred[1]), 4), 'Бронирования': int(pred[2]), 'Тип ВС': s['aircraft_type'], 'Код кабины': cabin_code, 'Доход пасс': round(float(pred[3]), 2), 'Пассажиры': int(pred[4])})
+                    capacity = int(pred[0])
+                    bookings = int(pred[2])
+                    calculated_lf = (bookings / capacity) if capacity > 0 else 0.0
+                    final_schedule_data.append({'№': f"{flight['flight_group_id']}-{cabin_code}", 'Изменения': change_status, 'Дата вылета': dt.strftime('%Y-%m-%d'), 'Номер рейса': s['flight_no'], 'Аэропорт вылета': s['dep_airport'], 'Аэропорт прилета': s['arr_airport'], 'Время вылета': dt.strftime('%H:%M'), 'Время прилета': (dt + s['duration']).strftime('%H:%M'), 'Емкость кабины': capacity, 'LF Кабина': round(calculated_lf, 4), 'Бронирования': bookings, 'Тип ВС': s['aircraft_type'], 'Код кабины': cabin_code, 'Доход пасс': round(float(pred[3]), 2), 'Пассажиры': int(pred[4])})
         df_final = pd.DataFrame(final_schedule_data)
         if not df_final.empty:
             df_final['sort_key'] = df_final['№'].apply(lambda x: (int(x.split('-')[0]), x.split('-')[1]))

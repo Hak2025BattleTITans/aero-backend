@@ -53,7 +53,7 @@ for h in logging.getLogger().handlers:
 # ------------------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------------------
-def _resolve_csv_path(file_key: str) -> Path:
+def _resolve_csv_path(file_key: str, path: Optional[Path] = UPLOAD_DIR) -> Path:
     """
     Безопасно резолвит путь к CSV на основе file_key из сессии.
     Поддерживает как абсолютный путь, так и просто имя файла.
@@ -64,15 +64,15 @@ def _resolve_csv_path(file_key: str) -> Path:
     candidate = Path(file_key)
     if not candidate.is_absolute():
         logger.debug(f"File_key is not absolute: {file_key}")
-        candidate = (UPLOAD_DIR / file_key).resolve()
+        candidate = (path / file_key).resolve()
 
     # Блокируем выход из UPLOAD_DIR, если путь не абсолютный в file_key
     try:
-        candidate.relative_to(UPLOAD_DIR)
+        candidate.relative_to(path)
     except ValueError:
         error_log = (
             f"\nCandidate: {candidate}"
-            f"\nUpload dir: {UPLOAD_DIR}"
+            f"\nUpload dir: {path}"
             f"\nParents: {list(candidate.parents)}"
             f"\nIs absolute: {candidate.is_absolute()}"
         )
@@ -154,7 +154,7 @@ async def optimize_dataset(
         avg_check_before = 0
 
     # 3) Разрешаем путь к исходному CSV
-    input_csv = _resolve_csv_path(session.file_key)
+    input_csv = _resolve_csv_path(session.file_key, OPTIMIZED_DIR)
 
     # 3.1) Генерация номеров рейсов ("№") до оптимизации
     try:
@@ -165,6 +165,7 @@ async def optimize_dataset(
         required = ['Номер рейса', 'Дата вылета', 'Время вылета', 'Код кабины']
         missing = [c for c in required if c not in df.columns]
         if missing:
+            logger.error(f"Input CSV is missing required columns: {input_csv}")
             raise HTTPException(
                 status_code=400,
                 detail=f"Input CSV is missing required columns: {missing}",
@@ -212,6 +213,12 @@ async def optimize_dataset(
     final_out: Path | None = None
 
     try:
+        out_over = _make_outfile(f"{x_session_id}__fixed")
+        logger.info(f"")
+        optimizer.universal_data_preparator(str(input_csv), str(out_over))
+        current_in = out_over
+        final_out = out_over
+
         if payload.overbooking:
             applied_steps.append("overbooking")
             out_over = _make_outfile(f"{x_session_id}__overbooking")
