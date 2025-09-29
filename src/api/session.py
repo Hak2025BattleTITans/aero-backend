@@ -100,14 +100,6 @@ async def generate_plots(redis: Redis, x_session_id: str) -> None:
         logger.error(f"CSV file not found at path: {csv_path}")
         raise HTTPException(status_code=404, detail="CSV file not found")
 
-    logger.debug(f"Reading CSV from path: {csv_path}")
-    reader = AsyncCSVReader(str(csv_path), delimiter=";")
-    try:
-        items, passengers, income, avg_check = await reader.read()
-    except Exception as e:
-        logger.error("Error reading CSV", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"CSV read error: {e}")
-
     items = session.optimized_schedule
 
     raw_plotter = Plotter(csv_path)
@@ -117,12 +109,14 @@ async def generate_plots(redis: Redis, x_session_id: str) -> None:
         raw_plotter.dyn_passenger()
     ]
 
-    plotter = await Plotter.from_items(items, csv_path)
-    optimized_plots = [
-        plotter.avg_check(),
-        plotter.dyn_income(),
-        plotter.dyn_passenger()
-    ]
+    optimized_plots = []
+    if items:
+        plotter = await Plotter.from_items(items, csv_path)
+        optimized_plots = [
+            plotter.avg_check(),
+            plotter.dyn_income(),
+            plotter.dyn_passenger()
+        ]
 
     return {
         "plots": plots,
