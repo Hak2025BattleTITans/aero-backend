@@ -22,6 +22,7 @@ from database import (ensure_session_exists, get_full, get_redis,
 from logging_config import LOGGING_CONFIG, ColoredFormatter
 from models import Iframe as IFrameItem
 from models import MainMetrics, MetricPair, ScheduleItem, SessionDoc
+from api.optimize import _resolve_csv_path
 
 dictConfig(LOGGING_CONFIG)
 logger = logging.getLogger(__name__)
@@ -37,6 +38,8 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)]
     )
 
+OPTIMIZED_DIR = Path(os.environ.get("OPTIMIZED_DIR", "optimized")).resolve()
+OPTIMIZED_DIR.mkdir(parents=True, exist_ok=True)
 
 _raw_upload_dir = os.getenv("UPLOAD_DIR", "uploads").strip()
 
@@ -47,47 +50,8 @@ else:
     app_root = Path(os.getenv("PROJECT_ROOT", Path.cwd()))
     UPLOAD_DIR = (app_root / _raw_upload_dir).resolve()
 
+
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-def _resolve_csv_path(file_key: str) -> Path:
-    """
-    Безопасно резолвит путь к CSV на основе file_key из сессии.
-    Поддерживает как абсолютный путь, так и просто имя файла.
-    """
-
-    logger.debug(f"Resolving CSV path for file_key: {file_key}")
-
-    # Если в Redis лежит абсолютный путь – используем его.
-    candidate = Path(file_key)
-    if not candidate.is_absolute():
-        logger.debug(f"File_key is not absolute: {file_key}")
-        candidate = (UPLOAD_DIR / file_key).resolve()
-
-    # Блокируем выход из UPLOAD_DIR, если путь не абсолютный в file_key
-    try:
-        # Если путь нельзя выразить как относительный к UPLOAD_DIR — ValueError
-        candidate.relative_to(UPLOAD_DIR)
-    except ValueError:
-        error_log = (
-            f"\nCandidate: {candidate}"
-            f"\nUpload dir: {UPLOAD_DIR}"
-            f"\nParents: {list(candidate.parents)}"
-            f"\nIs absolute: {candidate.is_absolute()}"
-        )
-
-        logger.error(f"Attempt to access file outside of upload directory: {error_log}")
-        raise HTTPException(status_code=400, detail="Invalid CSV path")
-
-    if not candidate.exists():
-        logger.error(f"CSV not found: {candidate}")
-        raise HTTPException(status_code=404, detail="CSV not found")
-
-    if candidate.suffix.lower() != ".csv":
-        logger.error(f"Not a CSV file: {candidate.name}")
-        raise HTTPException(status_code=400, detail="Only .csv files are allowed")
-
-
-    return candidate
 
 @router.post("/import-csv", summary="Прочитать CSV из file_key и сохранить в Redis")
 async def import_csv_from_session_file(
@@ -116,7 +80,7 @@ async def import_csv_from_session_file(
         raise HTTPException(status_code=400, detail="No file_key in session")
 
     # Резолвим путь
-    csv_path = _resolve_csv_path(session.file_key)
+    csv_path = _resolve_csv_path(session.file_key, OPTIMIZED_DIR)
     if not csv_path.exists() or not csv_path.is_file():
         logger.error(f"CSV file not found at path: {csv_path}")
         raise HTTPException(status_code=404, detail="CSV file not found")
