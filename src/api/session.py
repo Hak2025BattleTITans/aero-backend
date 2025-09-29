@@ -1,5 +1,7 @@
 ﻿import json
 import logging
+import os
+from pathlib import Path
 import uuid
 from datetime import datetime, timedelta, timezone
 from logging.config import dictConfig
@@ -39,6 +41,8 @@ for handler in root_logger.handlers:
     if type(handler) is logging.StreamHandler:
         handler.setFormatter(ColoredFormatter('%(levelname)s:     %(asctime)s %(name)s - %(message)s'))
 
+OPTIMIZED_DIR = Path(os.environ.get("OPTIMIZED_DIR", "optimized")).resolve()
+OPTIMIZED_DIR.mkdir(parents=True, exist_ok=True)
 
 class SessionResponse(BaseModel):
     session_id: str
@@ -95,7 +99,7 @@ async def generate_plots(redis: Redis, x_session_id: str) -> None:
 
     logger.debug(f"File key: {session.file_key}")
 
-    csv_path = _resolve_csv_path(session.file_key)
+    csv_path = _resolve_csv_path(session.file_key, OPTIMIZED_DIR)
     if not csv_path.exists() or not csv_path.is_file():
         logger.error(f"CSV file not found at path: {csv_path}")
         raise HTTPException(status_code=404, detail="CSV file not found")
