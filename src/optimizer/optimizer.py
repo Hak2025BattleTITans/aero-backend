@@ -46,24 +46,46 @@ def check_files_exist(filenames):
     return True
 
 class Optimizer:
-    def prepare_structural_data(self, raw_flights_file, configs_file):
+    @staticmethod
+    def _ensure_dataframe(data, *, nrows=None):
+        """Ensure that incoming data is represented as a pandas DataFrame."""
+        if isinstance(data, pd.DataFrame):
+            df = data.copy()
+        elif isinstance(data, (str, os.PathLike)):
+            df = pd.read_csv(data, delimiter=',', nrows=nrows)
+            if df.shape[1] == 1:
+                df = pd.read_csv(data, delimiter=';', nrows=nrows)
+        else:
+            raise TypeError(f"Unsupported data type: {type(data)!r}")
+        df.columns = df.columns.str.strip()
+        return df
+
+    def prepare_structural_data(self, raw_flights, configs_file=CONFIG_FILE):
         """
         Создает структурно полный DataFrame, выбирая ТОЛЬКО ОДНУ
         (самую вместительную) конфигурацию для каждого типа ВС.
         """
-        logger.info(f"  -> Загрузка рейсов из '{raw_flights_file}' и конфигураций из '{configs_file}'...")
+        if isinstance(raw_flights, (str, os.PathLike)):
+            logger.info(f"  -> Загрузка рейсов из '{raw_flights}' и конфигураций из '{configs_file}'...")
+        else:
+            logger.info("  -> Работа с dataframe..")
         try:
-            flights_df = pd.read_csv(raw_flights_file, delimiter=',')
-            if len(flights_df.columns) == 1: flights_df = pd.read_csv(raw_flights_file, delimiter=';')
+            flights_df = self._ensure_dataframe(raw_flights)
         except FileNotFoundError:
-            logger.error(f"ОШИБКА: Файл '{raw_flights_file}' не найден."); return None
-
-        flights_df.columns = flights_df.columns.str.strip()
+            logger.error(f"Ошибка: Файл '{raw_flights}' не найден.")
+            return None
+        except Exception as exc:
+            logger.error(f"Кртическая ошибка: {exc}")
+            return None
 
         try:
             configs_df = pd.read_csv(configs_file, delimiter='|')
         except FileNotFoundError:
             logger.error(f"ОШИБКА: Файл '{configs_file}' не найден."); return None
+            return None
+        except Exception as exc:
+            logger.error(f"Кртическая ошибка: {exc}")
+            return None
 
         configs_df.columns = configs_df.columns.str.strip()
         configs_df.rename(columns={'Twn BC': 'Тип ВС'}, inplace=True)
@@ -88,11 +110,11 @@ class Optimizer:
         final_df.loc[:, '№'] = final_df['номер_группы'].astype(str) + '-' + final_df['Код кабины']
 
         output_columns = ['№', 'Дата вылета', 'Номер рейса', 'Аэропорт вылета', 'Аэропорт прилета', 'Время вылета', 'Время прилета', 'Емкость кабины', 'Тип ВС', 'Код кабины']
-        output_df = final_df[output_columns]
-        output_df = output_df.sort_values(by='№').reset_index(drop=True)
+        output_df = final_df[output_columns].sort_values(by='№').reset_index(drop=True)
 
         logger.info("  -> Структурные данные успешно сгенерированы (без дубликатов).")
         return output_df
+
 
     def enrich_from_historical_data(self, df_to_enrich, historical_data_file):
         """
@@ -124,44 +146,45 @@ class Optimizer:
 
         return enriched_df
 
-    def universal_data_preparator(self, raw_data_file, final_prepared_file):
+    def universal_data_preparator(self, raw_data, final_prepared_file=None):
         """
         (НОВАЯ ЛОГИКА) Полный цикл подготовки данных путем поиска в эталонном файле.
+
+        Example:
+            >>> optimizer = Optimizer()
+            >>> raw_df = pd.read_csv('raw_schedule.csv', delimiter=';')
+            >>> prepared_df = optimizer.universal_data_preparator(raw_df)
         """
         logger.info("\n--- Проверка и подготовка исходных данных ---")
 
         try:
-            df_check = pd.read_csv(raw_data_file, delimiter=',', nrows=0)
-            delimiter = ','
-            if len(df_check.columns) == 1:
-                df_check = pd.read_csv(raw_data_file, delimiter=';', nrows=0)
-                delimiter = ';'
-        except Exception as e:
-            logger.error(f"КРИТИЧЕСКАЯ ОШИБКА: Не удалось прочитать файл '{raw_data_file}'. Ошибка: {e}"); return None
+            raw_df = self._ensure_dataframe(raw_data)
+        except FileNotFoundError:
+            logger.error(f"Не удалось прочитать файл'{raw_data}'.")
+            return None
+        except Exception as exc:
+            logger.error(f"КРИТИЧЕСКАЯ ОШИБКА: Ошибка: {exc}"); return None
+            raise
 
-        df_check.columns = df_check.columns.str.strip()
-
-        current_columns = set(df_check.columns)
         structural_cols = {'№', 'Код кабины', 'Емкость кабины'}
         prediction_cols = {'LF Кабина', 'Бронирования по кабинам', 'Доход пасс', 'Пассажиры'}
 
-        needs_structure = not structural_cols.issubset(current_columns)
-        needs_prediction = not prediction_cols.issubset(current_columns)
+        processed_df = raw_df.copy()
 
-        if not needs_structure and not needs_prediction:
-            logger.info(f"-> Исходный файл '{raw_data_file}' уже в полном формате. Загрузка...")
-            processed_df = pd.read_csv(raw_data_file, delimiter=delimiter)
-        else:
+        if not structural_cols.issubset(processed_df.columns):
             logger.warning("-> Требуется подготовка данных. Запуск полного цикла...")
-            processed_df = self.prepare_structural_data(raw_data_file, CONFIG_FILE)
-            if processed_df is None: return None
+            processed_df = self.prepare_structural_data(raw_df, CONFIG_FILE)
+            if processed_df is None:
+                return None
 
-            if needs_prediction or not prediction_cols.issubset(processed_df.columns):
-                logger.warning("-> Обнаружено отсутствие данных о загрузке. Запуск дополнения из эталонного файла...")
-                processed_df = self.enrich_from_historical_data(processed_df, HISTORICAL_DATA_FILE)
-                if processed_df is None: return None
+        if not prediction_cols.issubset(processed_df.columns):
+            logger.warning("-> Обнаружено отсутствие данных о загрузке. Запуск дополнения из эталонного файла...")
+            processed_df = self.enrich_from_historical_data(processed_df, HISTORICAL_DATA_FILE)
+            if processed_df is None:
+                return None
 
         logger.info(f"-> Финальная обработка: удаление несуществующих классов и форматирование...")
+        processed_df = processed_df.copy()
         processed_df['Емкость кабины'] = pd.to_numeric(processed_df['Емкость кабины'], errors='coerce')
         processed_df.dropna(subset=['Емкость кабины'], inplace=True)
         processed_df = processed_df[processed_df['Емкость кабины'] > 0].reset_index(drop=True)
@@ -169,29 +192,75 @@ class Optimizer:
         final_output_columns = ['№', 'Дата вылета', 'Номер рейса', 'Аэропорт вылета', 'Аэропорт прилета', 'Время вылета', 'Время прилета', 'Емкость кабины', 'LF Кабина', 'Бронирования по кабинам', 'Тип ВС', 'Код кабины', 'Доход пасс', 'Пассажиры']
 
         for col in final_output_columns:
-            if col not in processed_df.columns: processed_df[col] = np.nan
+            if col not in processed_df.columns:
+                processed_df[col] = np.nan
 
-        processed_df = processed_df[final_output_columns]
+        processed_df = processed_df[final_output_columns].copy()
 
-        # Заполняем пропуски нулями, если какие-то рейсы не нашлись в истории
         for col in prediction_cols:
             if processed_df[col].dtype == 'object':
-                # Для строковых колонок (если вдруг LF/Доход придут с запятой)
                 processed_df[col].fillna('0,0', inplace=True)
             else:
                 processed_df[col].fillna(0, inplace=True)
 
-        logger.info(f"-> Сохранение полностью подготовленных данных в файл '{final_prepared_file}'")
-        processed_df.to_csv(final_prepared_file, index=False, sep=';', encoding='utf-8-sig')
+        if final_prepared_file:
+            logger.info(f"-> Сохранение полностью подготовленных данных в файл '{final_prepared_file}'")
+            processed_df.to_csv(final_prepared_file, index=False, sep=';', encoding='utf-8-sig')
 
         logger.info("--- Подготовка данных завершена ---\n")
-        return final_prepared_file
+        return processed_df
 
-    def overbooking_optimization(self, input_file, output_file) -> bool:
-        run_overbooking_optimization(initial_schedule_file=input_file, final_output_file=output_file)
+    def overbooking_optimization(self, input_data, output_file=None) -> pd.DataFrame:
+        """
+        Оптимизация овербукинга с использованием pandas.DataFrame
 
-    def ranking_optimization(self, input_file, output_file) -> bool:
-        run_ranking_optimization(data_file=input_file, optimized_file=output_file)
+        Args:
+            input_data: pandas.DataFrame или путь к файлу
+            output_file: путь для сохранения результата (опционально)
+
+        Returns:
+            pandas.DataFrame с оптимизированными данными
+        """
+        # Преобразуем входные данные в DataFrame если нужно
+        if isinstance(input_data, str):
+            input_df = pd.read_csv(input_data, delimiter=';', encoding='utf-8-sig')
+        else:
+            input_df = input_data.copy()
+
+        # Вызываем основную функцию оптимизации
+        result_df = run_overbooking_optimization(input_df)
+
+        # Сохраняем результат если указан файл
+        if output_file:
+            result_df.to_csv(output_file, index=False, sep=';', encoding='utf-8-sig')
+
+        return result_df
+
+    def ranking_optimization(self, input_data, output_file=None) -> pd.DataFrame:
+        """
+        Оптимизация ранжирования с использованием pandas.DataFrame
+
+        Args:
+            input_data: pandas.DataFrame или путь к файлу
+            output_file: путь для сохранения результата (опционально)
+
+        Returns:
+            pandas.DataFrame с оптимизированными данными
+        """
+        # Преобразуем входные данные в DataFrame если нужно
+        if isinstance(input_data, str):
+            input_df = pd.read_csv(input_data, delimiter=';', encoding='utf-8-sig')
+        else:
+            input_df = input_data.copy()
+
+        # Вызываем основную функцию оптимизации
+        result_df = run_ranking_optimization(input_df)
+
+        # Сохраняем результат если указан файл
+        if output_file:
+            result_df.to_csv(output_file, index=False, sep=';', encoding='utf-8-sig')
+
+        return result_df
 
     def form_report(self, raw_file, optimized_file, output_filename, opt_type):
         # Логика формирования отчета

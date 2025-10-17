@@ -1,31 +1,49 @@
 # main_ranking.py - файл алгоритма оптимизации перемещением
-import pandas as pd
+import logging
+import os
+import tempfile
 import time
-import numpy as np
 import warnings
 from collections import defaultdict
-from sklearn.preprocessing import StandardScaler, LabelEncoder
+from logging.config import dictConfig
+
+import numpy as np
+import pandas as pd
 import tensorflow as tf
-from tensorflow.keras.models import load_model
-from tensorflow.keras.losses import mse
-from scipy.optimize import milp, Bounds, LinearConstraint
+from scipy.optimize import Bounds, LinearConstraint, milp
 from scipy.sparse import coo_matrix, vstack
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from tensorflow.keras.losses import mse  # pyright: ignore[reportMissingImports]
+from tensorflow.keras.models import load_model  # pyright: ignore[reportMissingImports]
+
 from optimizer.cores import optimizer_core
-import os
+from logging_config import LOGGING_CONFIG, ColoredFormatter
+
+# Setup logging
+dictConfig(LOGGING_CONFIG)
+logger = logging.getLogger(__name__)
+for h in logging.getLogger().handlers:
+    if isinstance(h, logging.StreamHandler):
+        h.setFormatter(
+            ColoredFormatter("%(levelname)s:     %(asctime)s %(name)s - %(message)s")
+        )
 
 warnings.filterwarnings("ignore")
 
-def get_aircraft_capacities(data_path):
-    df = pd.read_csv(data_path, delimiter=';', encoding='utf-8-sig')
-    df['Емкость кабины'] = pd.to_numeric(df['Емкость кабины'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-    capacities = {}
-    for _, row in df.iterrows():
-        ac_type, cabin, capacity = row['Тип ВС'], row['Код кабины'], int(row['Емкость кабины'])
-        if ac_type not in capacities: capacities[ac_type] = {}
+def get_aircraft_capacities(input_df):
+    aircraft_capacities = {}
+    for _, row in input_df.iterrows():
+        ac_type = row['Тип ВС']
+        cabin = row['Код кабины']
+        capacity = int(row['Емкость кабины'])
+
+        if ac_type not in aircraft_capacities:
+            aircraft_capacities[ac_type] = {}
+
         if capacity > 0:
-            if cabin not in capacities[ac_type] or capacity > capacities[ac_type][cabin]:
-                capacities[ac_type][cabin] = capacity
-    return capacities
+            aircraft_capacities[ac_type][cabin] = capacity
+
+    return aircraft_capacities
 
 def predict_with_model(model, df_requests, scaler_X, scaler_y, label_encoders, aircraft_capacities):
     input_columns = scaler_X.feature_names_in_
@@ -75,8 +93,31 @@ def predict_with_model(model, df_requests, scaler_X, scaler_y, label_encoders, a
             flight_preds[flight_preds[:, 4] < 0.5, 3] = 0.0
             final_predictions[i] = flight_preds
     return final_predictions.reshape(num_flights, 3, -1)
+
 def recreate_scalers_and_encoders(data_path, model_output_shape):
     df = pd.read_csv(data_path, delimiter=';', encoding='utf-8-sig')
+    categorical_cols = ['Аэропорт вылета', 'Аэропорт прилета', 'Тип ВС', 'Код кабины', 'Номер рейса']
+    label_encoders = {}
+    for col in categorical_cols:
+        if col in df.columns: le = LabelEncoder(); df[col] = le.fit_transform(df[col].astype(str)); label_encoders[col] = le
+    df['Дата вылета'] = pd.to_datetime(df['Дата вылета']).astype('int64') // 10**9
+    df['Время вылета'] = pd.to_datetime(df['Время вылета'], format='%H:%M', errors='coerce').dt.hour * 3600 + pd.to_datetime(df['Время вылета'], format='%H:%M', errors='coerce').dt.minute * 60
+    df['Время прилета'] = pd.to_datetime(df['Время прилета'], format='%H:%M', errors='coerce').dt.hour * 3600 + pd.to_datetime(df['Время прилета'], format='%H:%M', errors='coerce').dt.minute * 60
+    df.fillna(0, inplace=True)
+    input_cols = ['Дата вылета', 'Номер рейса', 'Аэропорт вылета', 'Аэропорт прилета', 'Время вылета', 'Время прилета', 'Тип ВС', 'Код кабины']
+    output_cols = ['Емкость кабины', 'LF Кабина', 'Бронирования по кабинам', 'Доход пасс', 'Пассажиры']
+    scaler_X = StandardScaler().fit(df[input_cols])
+    for col in output_cols: df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce')
+    df.fillna(0, inplace=True)
+    small_scaler_y = StandardScaler().fit(df[output_cols])
+    scaler_y = StandardScaler(); scaler_y.n_features_in_ = model_output_shape
+    mean_ = np.zeros(model_output_shape); scale_ = np.ones(model_output_shape)
+    mean_[:len(output_cols)] = small_scaler_y.mean_; scale_[:len(output_cols)] = small_scaler_y.scale_
+    scaler_y.mean_ = mean_; scaler_y.scale_ = scale_
+    return scaler_X, scaler_y, label_encoders
+
+def recreate_scalers_and_encoders_from_df(input_df, model_output_shape):
+    df = input_df.copy()
     categorical_cols = ['Аэропорт вылета', 'Аэропорт прилета', 'Тип ВС', 'Код кабины', 'Номер рейса']
     label_encoders = {}
     for col in categorical_cols:
@@ -120,19 +161,45 @@ def load_and_prepare_data(data_path):
         })
     return aggregated_flights, original_data_map
 
-def run_ranking_optimization(data_file, optimized_file):
+def load_and_prepare_data_from_df(df_schedule):
+    df_schedule = df_schedule.copy()
+    df_schedule['flight_group_id'] = df_schedule['№'].astype(str).str.split('-').str[0]
+    for col in ['Емкость кабины', 'LF Кабина', 'Бронирования по кабинам', 'Доход пасс', 'Пассажиры']:
+        if col in df_schedule.columns:
+            df_schedule[col] = pd.to_numeric(df_schedule[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+    original_data_map = { group_id: group.to_dict('records') for group_id, group in df_schedule.groupby('flight_group_id') }
+    aggregated_flights = []
+    for group_id, group in df_schedule.groupby('flight_group_id'):
+        first_row = group.iloc[0]
+        try:
+            dep_time = pd.to_datetime(f"{first_row['Дата вылета']} {first_row['Время вылета']}", format='%Y-%m-%d %H:%M')
+            arr_time = pd.to_datetime(f"{first_row['Дата вылета']} {first_row['Время прилета']}", format='%Y-%m-%d %H:%M')
+        except (ValueError, TypeError): continue
+        if pd.isna(dep_time) or pd.isna(arr_time): continue
+        if arr_time < dep_time: arr_time += pd.Timedelta(days=1)
+        duration = (arr_time - dep_time)
+        aggregated_flights.append({
+            'flight_group_id': group_id,
+            'static_data': { 'flight_no': str(first_row['Номер рейса']), 'dep_airport': first_row['Аэропорт вылета'], 'arr_airport': first_row['Аэропорт прилета'], 'duration': duration, 'aircraft_type': first_row['Тип ВС'], 'initial_datetime': dep_time, 'available_cabins': sorted(group['Код кабины'].unique().tolist()) }
+        })
+    return aggregated_flights, original_data_map
+
+def run_ranking_optimization(input_df):
     MODEL_FILE = '/app/src/optimizer/cores/cnn_lstm_flight_model.h5'
     TIME_WINDOW_HOURS, TIME_STEP_MINUTES, MIN_INTERVAL_MINUTES, MAX_FLIGHTS_IN_INTERVAL = 1, 15, 5, 2
 
-    print("1. Загрузка данных и компонентов модели...");
-    aircraft_capacities = get_aircraft_capacities(data_file)
+    logger.debug("1. Загрузка данных и компонентов модели...");
+    # Используем данные из DataFrame для получения емкостей самолетов
+    aircraft_capacities = get_aircraft_capacities(input_df)
+
     model = load_model(MODEL_FILE, custom_objects={'mse': mse})
     MODEL_OUTPUT_SHAPE = model.output_shape[-1]
-    scaler_X, scaler_y, label_encoders = recreate_scalers_and_encoders(data_file, MODEL_OUTPUT_SHAPE)
-    flights, original_data_map = load_and_prepare_data(data_file)
-    print(f"Найдено {len(flights)} рейсов для оптимизации.")
+    scaler_X, scaler_y, label_encoders = recreate_scalers_and_encoders_from_df(input_df, MODEL_OUTPUT_SHAPE)
 
-    print("\n2. Создание 'Вселенной вариантов'...")
+    flights, original_data_map = load_and_prepare_data_from_df(input_df)
+    logger.debug(f"Найдено {len(flights)} рейсов для оптимизации.")
+
+    logger.debug("\n2. Создание 'Вселенной вариантов'...")
     decision_vars, all_requests_list = [], []
     for i, flight_data in enumerate(flights):
         flight = flight_data['static_data']
@@ -144,16 +211,16 @@ def run_ranking_optimization(data_file, optimized_file):
             decision_vars.append({'flight_index': i, 'datetime': new_dt})
             all_requests_list.append({'Дата вылета': new_dt.strftime('%Y-%m-%d'), 'Номер рейса': int(flight['flight_no']), 'Аэропорт вылета': flight['dep_airport'], 'Аэропорт прилета': flight['arr_airport'], 'Время вылета': new_dt.strftime('%H:%M'), 'Время прилета': (new_dt + flight['duration']).strftime('%H:%M'), 'Тип ВС': flight['aircraft_type']})
     num_vars = len(decision_vars)
-    print(f"  Создано {num_vars} возможных решений (переменных).")
+    logger.debug(f"  Создано {num_vars} возможных решений (переменных).")
 
-    print("\n3. Пакетный прогноз с помощью гибридной модели...");
+    logger.debug("\n3. Пакетный прогноз с помощью гибридной модели...");
     if not all_requests_list:
-        print("  Нет возможных решений для оптимизации. Проверьте временное окно и данные.")
+        logger.debug("  Нет возможных решений для оптимизации. Проверьте временное окно и данные.")
         return None
     df_requests = pd.DataFrame(all_requests_list)
     all_predictions = predict_with_model(model, df_requests, scaler_X, scaler_y, label_encoders, aircraft_capacities)
 
-    print("\n4. Построение матрицы ограничений с помощью Cython...")
+    logger.debug("\n4. Построение матрицы ограничений с помощью Cython...")
     start_time_matrix = time.time()
     profits = np.sum(all_predictions[:, :, 3], axis=1)
     c = -profits
@@ -178,19 +245,19 @@ def run_ranking_optimization(data_file, optimized_file):
         A, lb, ub = flight_constraints.tocsr(), np.ones(len(flights)), np.ones(len(flights))
     constraints = LinearConstraint(A, lb=lb, ub=ub)
     model_build_time = time.time() - start_time_matrix
-    print(f"  Модель полностью построена за {model_build_time:.2f} сек.")
+    logger.debug(f"  Модель полностью построена за {model_build_time:.2f} сек.")
 
-    print("\n5. Запуск решателя MILP...")
+    logger.debug("\n5. Запуск решателя MILP...")
     start_solve_time = time.time()
     integrality, bounds = np.ones(num_vars), Bounds(lb=0, ub=1)
     result = milp(c=c, constraints=constraints, integrality=integrality, bounds=bounds, options={'disp': True})
     solve_time = time.time() - start_solve_time
-    print(f"  Решение найдено за {solve_time:.2f} сек.")
+    logger.debug(f"  Решение найдено за {solve_time:.2f} сек.")
 
     if result.success:
         optimal_profit = -result.fun
-        print("\n--- Общие результаты ---"); print(f"Оптимальный доход: {optimal_profit:,.2f} у.е.")
-        print("\n6. Сохранение оптимального расписания...")
+        logger.debug("\n--- Общие результаты ---"); logger.debug(f"Оптимальный доход: {optimal_profit:,.2f} у.е.")
+        logger.debug("\n6. Сохранение оптимального расписания...")
         final_schedule_data = []
         chosen_vars_indices = np.where(result.x > 0.9)[0]
         chosen_predictions = all_predictions[chosen_vars_indices]
@@ -216,11 +283,10 @@ def run_ranking_optimization(data_file, optimized_file):
         if not df_final.empty:
             df_final['sort_key'] = df_final['№'].apply(lambda x: (int(x.split('-')[0]), x.split('-')[1]))
             df_final = df_final.sort_values('sort_key').drop(columns='sort_key')
-        df_final.to_csv(optimized_file, index=False, sep=';', encoding='utf-8-sig')
-        print(f"  Оптимальное расписание сохранено в '{optimized_file}'")
-        return optimized_file
+        logger.debug(f"  Оптимальное расписание готово")
+        return df_final
     else:
-        print(f"\nОШИБКА: Решателю не удалось найти решение. Статус: {result.message}")
+        logger.debug(f"\nОШИБКА: Решателю не удалось найти решение. Статус: {result.message}")
         return None
 
 if __name__ == "__main__":
@@ -230,7 +296,7 @@ if __name__ == "__main__":
     default_optimized_file = 'final_schedule_optimized.csv'
     default_model_file = 'cnn_lstm_flight_model.h5'
 
-    print(f"Запуск оптимизатора ранжирования для файла: {default_data_file}")
+    logger.debug(f"Запуск оптимизатора ранжирования для файла: {default_data_file}")
 
     final_file_path = run_ranking_optimization(
         data_file=default_data_file,
@@ -238,12 +304,12 @@ if __name__ == "__main__":
     )
 
     if final_file_path:
-        print(f"\nРабота успешно завершена. Итоговый файл: {final_file_path}")
+        logger.debug(f"\nРабота успешно завершена. Итоговый файл: {final_file_path}")
     else:
-        print("\nРабота завершилась с ошибкой.")
+        logger.debug("\nРабота завершилась с ошибкой.")
 
     end_total_time = time.time()
     elapsed_time = end_total_time - start_total_time
     minutes = int(elapsed_time // 60)
     seconds = int(elapsed_time % 60)
-    print(f"\nОбщее время выполнения скрипта: {minutes} мин {seconds} сек.")
+    logger.debug(f"\nОбщее время выполнения скрипта: {minutes} мин {seconds} сек.")

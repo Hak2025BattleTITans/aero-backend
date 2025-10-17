@@ -44,7 +44,7 @@ SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret-change-me")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
-# Argon2 параметры (разумные дефолты под прод)
+# Argon2 параметры
 ph = PasswordHasher(
     time_cost=3,           # итерации
     memory_cost=64 * 1024, # 64 MiB
@@ -54,8 +54,8 @@ ph = PasswordHasher(
 # Хеш пароля администратора вычисляется один раз при старте
 ADMIN_PASSWORD_HASH = ph.hash(ADMIN_PASSWORD)
 
-# Для Swagger: tokenUrl должен указывать на ваш роут логина
-# Если вы монтируете router под /api, используйте абсолютный путь как ниже.
+# Для Swagger: tokenUrl на раут логина
+# Монтируем router под /api, используем абсолютный путь.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 router = APIRouter(prefix="/auth", tags=["auth"])

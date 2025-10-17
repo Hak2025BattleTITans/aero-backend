@@ -7,8 +7,8 @@ import random
 from collections import defaultdict
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 import tensorflow as tf
-from tensorflow.keras.models import load_model
-from tensorflow.keras.losses import mse
+from tensorflow.keras.models import load_model  # pyright: ignore[reportMissingImports]
+from tensorflow.keras.losses import mse  # pyright: ignore[reportMissingImports]
 from optimizer.cores import overbooking_core
 import os
 import tempfile
@@ -93,7 +93,7 @@ def predict_with_model(model, df_requests, scaler_X, scaler_y, label_encoders, a
             final_predictions[i] = flight_preds
     return final_predictions.reshape(num_flights, 3, -1)
 
-def run_overbooking_optimization(initial_schedule_file, final_output_file):
+def run_overbooking_optimization(input_df):
     DATA_FILE = 'hackathon_data_main_with_numbers.csv'
     MODEL_FILE = '/app/src/optimizer/cores/cnn_lstm_flight_model.h5'
 
@@ -116,8 +116,8 @@ def run_overbooking_optimization(initial_schedule_file, final_output_file):
         MODEL_OUTPUT_SHAPE = model.output_shape[-1]
         scaler_X, scaler_y, label_encoders = recreate_scalers_and_encoders(DATA_FILE, MODEL_OUTPUT_SHAPE)
 
-        print(f"\n1.2. Поиск рейсов с LF >= {LF_THRESHOLD} в файле '{initial_schedule_file}'...")
-        df_opt = pd.read_csv(initial_schedule_file, delimiter=';', encoding='utf-8-sig')
+        print(f"\n1.2. Поиск рейсов с LF >= {LF_THRESHOLD} в данных...")
+        df_opt = input_df.copy()
         for col in ['LF Кабина', 'Емкость кабины', 'Доход пасс', 'Пассажиры']:
             if col in df_opt.columns: df_opt[col] = pd.to_numeric(df_opt[col].astype(str).str.replace(',', '.'), errors='coerce')
         df_opt['flight_group_id'] = df_opt['№'].astype(str).str.split('-').str[0]
@@ -233,8 +233,8 @@ def run_overbooking_optimization(initial_schedule_file, final_output_file):
         print(f"  Найдено {len(target_groups_pass2)} групп рейсов для добавления еще одного дубликата.")
 
         if not target_groups_pass2:
-             print("  Рейсов для второго этапа оптимизации не найдено. Завершение.")
-             df_pass1.to_csv(final_output_file, index=False, sep=';', encoding='utf-8-sig')
+            print("  Рейсов для второго этапа оптимизации не найдено. Завершение.")
+            return df_pass1
         else:
             background_traffic_pass2 = defaultdict(list)
             for _, row in df_pass1.iterrows():
@@ -312,11 +312,10 @@ def run_overbooking_optimization(initial_schedule_file, final_output_file):
             df_final = pd.DataFrame(final_rows)
             if 'base_group_id' in df_final.columns: df_final = df_final.drop(columns=['base_group_id'])
             df_final.sort_values(by=['Дата вылета', 'Время вылета', 'Номер рейса'], inplace=True)
-            df_final.to_csv(final_output_file, index=False, sep=';', encoding='utf-8-sig')
-            print(f"  Итоговое полностью оптимизированное расписание сохранено в '{final_output_file}'")
+            print(f"  Итоговое полностью оптимизированное расписание готово")
 
         print("\n--- ОПТИМИЗАЦИЯ ПОЛНОСТЬЮ ЗАВЕРШЕНА ---")
-        return final_output_file
+        return df_final
 
     finally:
         if INTERMEDIATE_OUTPUT_FILE and os.path.exists(INTERMEDIATE_OUTPUT_FILE):

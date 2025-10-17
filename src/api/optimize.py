@@ -3,6 +3,8 @@ import logging
 import os
 from logging.config import dictConfig
 from pathlib import Path
+
+import pandas as pd
 from typing import Literal, Optional
 
 from dotenv import find_dotenv, load_dotenv
@@ -176,7 +178,13 @@ async def optimize_dataset(
     try:
         out_over = _make_outfile(f"{x_session_id}__fixed")
         logger.info(f"")
-        optimizer.universal_data_preparator(str(input_csv), str(out_over))
+        raw_input_df = pd.read_csv(input_csv, delimiter=',')
+        if raw_input_df.shape[1] == 1:
+            raw_input_df = pd.read_csv(input_csv, delimiter=';')
+        prepared_df = optimizer.universal_data_preparator(raw_input_df)
+        if prepared_df is None:
+            raise RuntimeError("Failed to prepare input data")
+        prepared_df.to_csv(out_over, index=False, sep=';', encoding='utf-8-sig')
         current_in = out_over
         final_out = out_over
 

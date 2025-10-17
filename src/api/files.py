@@ -6,6 +6,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from logging.config import dictConfig
 from pathlib import Path
+
+import pandas as pd
 from typing import Any, Dict, List, Optional
 
 import aiofiles
@@ -185,7 +187,13 @@ async def upload_csv_file(
     logger.debug(f"Optimizing CSV: {stored_path} -> {out_over}")
     optimizer = Optimizer()
     try:
-        optimizer.universal_data_preparator(str(stored_path), str(out_over))
+        raw_input_df = pd.read_csv(stored_path, delimiter=',')
+        if raw_input_df.shape[1] == 1:
+            raw_input_df = pd.read_csv(stored_path, delimiter=';')
+        prepared_df = optimizer.universal_data_preparator(raw_input_df)
+        if prepared_df is None:
+            raise RuntimeError("Failed to prepare input data")
+        prepared_df.to_csv(out_over, index=False, sep=';', encoding='utf-8-sig')
     except Exception as e:
         logger.error("Error optimizing CSV", exc_info=True)
         raise HTTPException(status_code=500, detail=f"CSV optimization error: {e}")
